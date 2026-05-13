@@ -300,8 +300,9 @@ const CharacterBody = ({
       // Walk GLB may be cumulative — take the LAST animation (same as pose files)
       const allWalkAnims = walkGlb.animations;
       const walkRaw = allWalkAnims[allWalkAnims.length - 1];
-      // stripAllPositions=true: remove all position tracks to prevent visual snap at loop
-      const clip = adaptClip(walkRaw.clone(), clone, `${charKey}/walk`, true);
+      // stripAllPositions removed: ROOT_MOTION_BONES already strips XZ root motion.
+      // Keeping hips Y bobbing prevents Anny from sinking into floor.
+      const clip = adaptClip(walkRaw.clone(), clone, `${charKey}/walk`);
       const act  = mixer.clipAction(clip);
       act.setLoop(THREE.LoopRepeat, Infinity);
       // Anny walk slower (0.55) to match her movement speed and avoid slide
@@ -453,7 +454,9 @@ const CharacterBody = ({
       const spd     = Math.min(3, 2 + dist * 1.5);
       const ndx     = (targetX - npcT.x) * spd;
       const ndz     = (targetZ - npcT.z) * spd;
-      npcRb.setLinvel({ x: ndx, y: npcRb.linvel().y, z: ndz }, true);
+      // Clamp Y ≤ 0: prevent trimesh collisions from pushing NPC upward
+      const ndY = Math.min(0, npcRb.linvel().y);
+      npcRb.setLinvel({ x: ndx, y: ndY, z: ndz }, true);
     }
   });
 
