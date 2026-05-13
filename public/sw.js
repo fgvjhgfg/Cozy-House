@@ -3,7 +3,7 @@
 // ║  Стратегия: Cache-First для GLB/текстур, Network-First для HTML/JS   ║
 // ╚══════════════════════════════════════════════════════════════════════╝
 
-const CACHE_VERSION = 'cozy-house-v1';
+const CACHE_VERSION = 'cozy-house-v2';
 const ASSET_CACHE   = `${CACHE_VERSION}-assets`;
 const APP_CACHE     = `${CACHE_VERSION}-app`;
 
