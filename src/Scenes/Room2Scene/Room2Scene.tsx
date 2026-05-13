@@ -108,7 +108,7 @@ function adaptClip(
   clip: THREE.AnimationClip,
   root: THREE.Object3D,
   label = '',
-  stripAllPositions = false  // true for walk anims to prevent visual snap at loop
+  stripRootAll = false  // true for rotated models (Vell): strip ALL root-bone tracks (pos+rot)
 ): THREE.AnimationClip {
   // Строим карту: normName → realName
   const boneMap = new Map<string, string>();
@@ -130,10 +130,14 @@ function adaptClip(
     const bone = dot !== -1 ? t.name.slice(0, dot) : t.name;
     const prop = dot !== -1 ? t.name.slice(dot) : '';
     const isPos = prop.includes('position') || prop.includes('translation');
-    // Skip ALL position tracks for walk anims (prevent visual snap at loop)
-    if (stripAllPositions && isPos) return;
-    // Skip root-motion position from root bones
-    if (ROOT_MOTION_BONES.has(normBone(bone)) && isPos) return;
+    const isRot = prop.includes('quaternion') || prop.includes('rotation');
+    const isRoot = ROOT_MOTION_BONES.has(normBone(bone));
+    // For rotated models (Vell walk): strip ALL root tracks (pos AND rot)
+    // The walk anim was recorded for an upright model; applying its root rotation
+    // to Vell's -π/2 rotated skeleton causes him to flip horizontal.
+    if (stripRootAll && isRoot) return;
+    // For normal models (Anny walk): only strip root-motion positions
+    if (!stripRootAll && isRoot && isPos) return;
     const real = boneMap.get(normBone(bone));
     if (real) { const c = t.clone(); c.name = real + prop; tracks.push(c); }
   });
@@ -226,25 +230,29 @@ const CharacterBody = ({
   const clone = useMemo(() => {
     const c = SkeletonUtils.clone(model.scene);
 
-    // 1. Измеряем bbox ДО поворота (для Vell: измеряем "лёжа" → правильный rawH)
+    // For Vell: the GLB model lies on its side (rotation baked in).
+    // We measure bbox in its NATIVE orientation (before any rotation).
+    // Then we rotate only the WRAPPER GROUP in JSX — NOT the clone itself,
+    // so that skeleton animation tracks work in original bone space.
     c.updateMatrixWorld(true);
     const box0 = new THREE.Box3().setFromObject(c);
     const sz0  = new THREE.Vector3(); box0.getSize(sz0);
-    // Детальное логирование
-    console.log(`[${charKey}] bbox BEFORE rot: x=${sz0.x.toFixed(3)} y=${sz0.y.toFixed(3)} z=${sz0.z.toFixed(3)}`);
-    // Оба персонажа лежат в GLB с одинаковым Y≈0.2 (толщина тела)
-    // Используем Y для обоих → одинаковая логика масштабирования
-    const rawH = sz0.y;
+    console.log(`[${charKey}] bbox native: x=${sz0.x.toFixed(3)} y=${sz0.y.toFixed(3)} z=${sz0.z.toFixed(3)}`);
+
+    // rawH = dimension that becomes the character's HEIGHT after rotation.
+    // Vell: lies along Z in GLB (-π/2 X rot → Z becomes Y_world). Use sz0.z.
+    // Anny: stands upright. Use sz0.y.
+    const rawH = modelRotationX ? sz0.z : sz0.y;
     console.log(`[${charKey}] rawH=${rawH.toFixed(3)} target=${targetHeight} scale=${(targetHeight/rawH).toFixed(3)}`);
 
-    // 2. Масштабируем до targetHeight
+    // Scale uniformly to target height
     if (rawH > 0) c.scale.multiplyScalar(targetHeight / rawH);
 
-    // 3. Применяем поворот (например Vell лежит в GLB → ставим вертикально)
+    // Apply rotation to clone directly (Vell lies in GLB, rotate upright)
     if (modelRotationX) c.rotation.x = modelRotationX;
     c.updateMatrixWorld(true);
 
-    // 4. Садим на пол по bbox ПОСЛЕ поворота (min.y → 0)
+    // Seat model on floor: shift so bottom of bbox is at y=0
     const sb = new THREE.Box3().setFromObject(c);
     c.position.y -= sb.min.y;
 
@@ -252,8 +260,6 @@ const CharacterBody = ({
       if ((o as THREE.Mesh).isMesh) {
         o.castShadow = true;
         (o as THREE.Mesh).receiveShadow = true;
-        // Fix transparency artifacts from KTX2 textures:
-        // KTX2 loader sometimes marks materials transparent even when opacity ≈ 1
         const mesh = o as THREE.Mesh;
         const mats = Array.isArray(mesh.material) ? mesh.material : [mesh.material];
         mats.forEach(mat => {
@@ -300,9 +306,9 @@ const CharacterBody = ({
       // Walk GLB may be cumulative — take the LAST animation (same as pose files)
       const allWalkAnims = walkGlb.animations;
       const walkRaw = allWalkAnims[allWalkAnims.length - 1];
-      // stripAllPositions removed: ROOT_MOTION_BONES already strips XZ root motion.
-      // Keeping hips Y bobbing prevents Anny from sinking into floor.
-      const clip = adaptClip(walkRaw.clone(), clone, `${charKey}/walk`);
+      // Both chars: strip root-motion positions only (standard root motion strip).
+      // Vell's skeleton is now in native (unrotated) space, so no special treatment needed.
+      const clip = adaptClip(walkRaw.clone(), clone, `${charKey}/walk`, false);
       const act  = mixer.clipAction(clip);
       act.setLoop(THREE.LoopRepeat, Infinity);
       // Anny walk slower (0.55) to match her movement speed and avoid slide
@@ -347,6 +353,16 @@ const CharacterBody = ({
   // ── Per-frame logic ───────────────────────────────────────────────────────────
   useFrame((_, delta) => {
     mixerRef.current?.update(delta);
+    // Reset clone root XZ position every frame — prevents walk animation from drifting
+    // the visual mesh horizontally. Y is preserved (floor-seating offset from useMemo).
+    if (clone) { clone.position.x = 0; clone.position.z = 0; }
+    // Hard-lock upright orientation every frame.
+    // Trimesh wall contacts can flip the character despite lockRotations.
+    if (rb.current) {
+      rb.current.setAngvel({ x: 0, y: 0, z: 0 }, false);
+      rb.current.setRotation({ x: 0, y: 0, z: 0, w: 1 }, false);
+    }
+
     if (!rb.current || !group.current) return;
 
     const t = rb.current.translation();
@@ -422,7 +438,9 @@ const CharacterBody = ({
       if (Math.abs(joy.x) > 0.08) dx += joy.x * SPEED;
       if (Math.abs(joy.y) > 0.08) dz -= joy.y * SPEED;
     }
-    rb.current.setLinvel({ x: dx, y: vel.y, z: dz }, true);
+    // Clamp Y ≤ 0: trimesh contact normals can push player upward on ramps/edges.
+    // This game has no jumping, so positive Y velocity is always a physics glitch.
+    rb.current.setLinvel({ x: dx, y: Math.min(0, vel.y), z: dz }, true);
 
     const moving = dx !== 0 || dz !== 0;
     if (moving) {
@@ -463,7 +481,6 @@ const CharacterBody = ({
   return (
     <RigidBody ref={rb} type="dynamic" lockRotations friction={0} colliders={false} canSleep={false} position={spawnPos}>
       <CapsuleCollider args={colliderArgs} position={colliderOffset} />
-      {/* group вращается только по Y (facing direction) */}
       <group ref={group}>
         <primitive object={clone} />
       </group>
@@ -680,7 +697,7 @@ export const Room2Scene = () => {
               poseUrls={VELL_POSE_URLS}
               isPlayer={character === 'Vell'}
               spawnPos={[0.5, 3, 0]}
-              targetHeight={0.9}
+              targetHeight={4.0}
               colliderArgs={[0.13, 0.38]}
               colliderOffset={[0, 0.51, 0]}
               modelRotationX={-Math.PI / 2}

@@ -452,12 +452,13 @@ export const App = () => {
     !new URLSearchParams(window.location.search).has('r')
   );
 
-  // DEV: ?r=2 → сразу Room 2 с Anny, минуя меню
+  // DEV: ?r=2 → сразу Room 2, минуя меню. ?c=Vell / ?c=Any → выбор персонажа
   React.useEffect(() => {
     const p = new URLSearchParams(window.location.search);
     if (p.get('r') === '2') {
       const s = useStore.getState();
-      s.setCharacter('Any');
+      const char = p.get('c') === 'Vell' ? 'Vell' : 'Any';
+      s.setCharacter(char);
       s.unlockRoom('Room2Scene');
       s.setCurrentRoom('Room2Scene');
     }
