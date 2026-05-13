@@ -107,7 +107,8 @@ function stripHipsPosition(clip: THREE.AnimationClip): THREE.AnimationClip {
 function adaptClip(
   clip: THREE.AnimationClip,
   root: THREE.Object3D,
-  label = ''
+  label = '',
+  stripAllPositions = false  // true for walk anims to prevent visual snap at loop
 ): THREE.AnimationClip {
   // Строим карту: normName → realName
   const boneMap = new Map<string, string>();
@@ -128,8 +129,11 @@ function adaptClip(
     const dot  = t.name.indexOf('.');
     const bone = dot !== -1 ? t.name.slice(0, dot) : t.name;
     const prop = dot !== -1 ? t.name.slice(dot) : '';
-    // Skip hips position tracks (root motion) — handled by stripHipsPosition below
-    if (normBone(bone) === 'hips' && (prop.includes('position') || prop.includes('translation'))) return;
+    const isPos = prop.includes('position') || prop.includes('translation');
+    // Skip ALL position tracks for walk anims (prevent visual snap at loop)
+    if (stripAllPositions && isPos) return;
+    // Skip root-motion position from root bones
+    if (ROOT_MOTION_BONES.has(normBone(bone)) && isPos) return;
     const real = boneMap.get(normBone(bone));
     if (real) { const c = t.clone(); c.name = real + prop; tracks.push(c); }
   });
@@ -142,7 +146,7 @@ function adaptClip(
     console.log(`[adaptClip ${label}] matched ${tracks.length}/${clip.tracks.length} tracks`);
     result = new THREE.AnimationClip(clip.name, clip.duration, tracks);
   }
-  // ALWAYS strip hips position as a final safety measure
+  // ALWAYS strip root-motion positions as a final safety measure
   return stripHipsPosition(result);
 }
 
@@ -222,21 +226,25 @@ const CharacterBody = ({
   const clone = useMemo(() => {
     const c = SkeletonUtils.clone(model.scene);
 
-    // 1. Сначала применяем поворот (Vell лежит в GLB — нужно поставить вертикально)
+    // 1. Измеряем bbox ДО поворота (для Vell: измеряем "лёжа" → правильный rawH)
+    c.updateMatrixWorld(true);
+    const box0 = new THREE.Box3().setFromObject(c);
+    const sz0  = new THREE.Vector3(); box0.getSize(sz0);
+    // Детальное логирование
+    console.log(`[${charKey}] bbox BEFORE rot: x=${sz0.x.toFixed(3)} y=${sz0.y.toFixed(3)} z=${sz0.z.toFixed(3)}`);
+    // Оба персонажа лежат в GLB с одинаковым Y≈0.2 (толщина тела)
+    // Используем Y для обоих → одинаковая логика масштабирования
+    const rawH = sz0.y;
+    console.log(`[${charKey}] rawH=${rawH.toFixed(3)} target=${targetHeight} scale=${(targetHeight/rawH).toFixed(3)}`);
+
+    // 2. Масштабируем до targetHeight
+    if (rawH > 0) c.scale.multiplyScalar(targetHeight / rawH);
+
+    // 3. Применяем поворот (например Vell лежит в GLB → ставим вертикально)
     if (modelRotationX) c.rotation.x = modelRotationX;
     c.updateMatrixWorld(true);
 
-    // 2. Измеряем bbox ПОСЛЕ поворота — теперь Y = реальная высота персонажа
-    const box0 = new THREE.Box3().setFromObject(c);
-    const sz0  = new THREE.Vector3(); box0.getSize(sz0);
-    const rawH = sz0.y;
-    console.log(`[${charKey}] rawH(post-rot)=${rawH.toFixed(3)}, target=${targetHeight}`);
-
-    // 3. Масштабируем до targetHeight
-    if (rawH > 0) c.scale.multiplyScalar(targetHeight / rawH);
-    c.updateMatrixWorld(true);
-
-    // 4. Посадить на пол (ступни = min.y → 0)
+    // 4. Садим на пол по bbox ПОСЛЕ поворота (min.y → 0)
     const sb = new THREE.Box3().setFromObject(c);
     c.position.y -= sb.min.y;
 
@@ -292,7 +300,8 @@ const CharacterBody = ({
       // Walk GLB may be cumulative — take the LAST animation (same as pose files)
       const allWalkAnims = walkGlb.animations;
       const walkRaw = allWalkAnims[allWalkAnims.length - 1];
-      const clip = adaptClip(walkRaw.clone(), clone, `${charKey}/walk`);
+      // stripAllPositions=true: remove all position tracks to prevent visual snap at loop
+      const clip = adaptClip(walkRaw.clone(), clone, `${charKey}/walk`, true);
       const act  = mixer.clipAction(clip);
       act.setLoop(THREE.LoopRepeat, Infinity);
       // Anny walk slower (0.55) to match her movement speed and avoid slide
