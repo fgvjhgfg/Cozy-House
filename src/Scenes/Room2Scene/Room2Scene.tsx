@@ -90,13 +90,16 @@ function normBone(name: string): string {
 }
 
 // Strips hips root-motion position from a THREE.js AnimationClip (in-place)
+// Root bones that carry root-motion position data
+const ROOT_MOTION_BONES = new Set(['hips','root','pelvis','bip01','bip001','armature','character','torso']);
+
 function stripHipsPosition(clip: THREE.AnimationClip): THREE.AnimationClip {
   clip.tracks = clip.tracks.filter(t => {
     const dot  = t.name.indexOf('.');
     const bone = dot !== -1 ? t.name.slice(0, dot) : t.name;
     const prop = dot !== -1 ? t.name.slice(dot) : '';
-    // Remove hips position/translation — both naming conventions
-    return !(normBone(bone) === 'hips' && (prop.includes('position') || prop.includes('translation')));
+    // Remove root-motion position/translation from any known root bone
+    return !(ROOT_MOTION_BONES.has(normBone(bone)) && (prop.includes('position') || prop.includes('translation')));
   });
   return clip;
 }
@@ -219,21 +222,21 @@ const CharacterBody = ({
   const clone = useMemo(() => {
     const c = SkeletonUtils.clone(model.scene);
 
-    // 1. Измеряем bbox до поворота
-    c.updateMatrixWorld(true);
-    const box0 = new THREE.Box3().setFromObject(c);
-    const sz0  = new THREE.Vector3(); box0.getSize(sz0);
-    const rawH = sz0.y;
-    console.log(`[${charKey}] rawH=${rawH.toFixed(3)}, target=${targetHeight}`);
-
-    // 2. Масштабируем
-    if (rawH > 0) c.scale.multiplyScalar(targetHeight / rawH);
-
-    // 3. Поворот модели (например Vell лежит в GLB, нужно поставить вертикально)
+    // 1. Сначала применяем поворот (Vell лежит в GLB — нужно поставить вертикально)
     if (modelRotationX) c.rotation.x = modelRotationX;
     c.updateMatrixWorld(true);
 
-    // 4. Посадить на пол (берём bbox УЖЕ с поворотом)
+    // 2. Измеряем bbox ПОСЛЕ поворота — теперь Y = реальная высота персонажа
+    const box0 = new THREE.Box3().setFromObject(c);
+    const sz0  = new THREE.Vector3(); box0.getSize(sz0);
+    const rawH = sz0.y;
+    console.log(`[${charKey}] rawH(post-rot)=${rawH.toFixed(3)}, target=${targetHeight}`);
+
+    // 3. Масштабируем до targetHeight
+    if (rawH > 0) c.scale.multiplyScalar(targetHeight / rawH);
+    c.updateMatrixWorld(true);
+
+    // 4. Посадить на пол (ступни = min.y → 0)
     const sb = new THREE.Box3().setFromObject(c);
     c.position.y -= sb.min.y;
 
@@ -241,6 +244,20 @@ const CharacterBody = ({
       if ((o as THREE.Mesh).isMesh) {
         o.castShadow = true;
         (o as THREE.Mesh).receiveShadow = true;
+        // Fix transparency artifacts from KTX2 textures:
+        // KTX2 loader sometimes marks materials transparent even when opacity ≈ 1
+        const mesh = o as THREE.Mesh;
+        const mats = Array.isArray(mesh.material) ? mesh.material : [mesh.material];
+        mats.forEach(mat => {
+          const m = mat as THREE.MeshStandardMaterial;
+          if (m && m.isMaterial && m.opacity > 0.9) {
+            m.transparent = false;
+            m.depthWrite  = true;
+            m.alphaTest   = 0;
+            m.side        = THREE.FrontSide;
+            m.needsUpdate = true;
+          }
+        });
       }
     });
     return c;
