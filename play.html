@@ -1,0 +1,305 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Cozy House Game SPA</title>
+    <style>
+        body, html { margin: 0; padding: 0; width: 100%; height: 100%; overflow: hidden; background-color: #000; font-family: 'Segoe UI', sans-serif; }
+        #root { width: 100%; height: 100%; }
+        
+        .fade-overlay {
+            position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+            background-color: black;
+            transition: opacity 0.8s ease-in-out;
+            pointer-events: none;
+            z-index: 9999;
+            display: flex; justify-content: center; align-items: center;
+        }
+        .fade-overlay.active { pointer-events: all; }
+        
+        .hud {
+            position: absolute; top: 20px; left: 20px;
+            background: rgba(0,0,0,0.6); color: white;
+            padding: 10px 20px; border-radius: 12px;
+            z-index: 100; pointer-events: none;
+        }
+        
+        .char-select {
+            position: fixed; inset: 0; z-index: 1000;
+            background: radial-gradient(ellipse at 50% 30%, #2E1A0A, #150B04);
+            display: flex; flex-direction: column; align-items: center; justify-content: center;
+            color: #F5E6CE; text-align: center;
+        }
+        .char-btn {
+            background: linear-gradient(135deg, #FF9A5C, #FF6B35);
+            padding: 10px 30px; border-radius: 50px; color: white;
+            font-size: 18px; cursor: pointer; border: none; margin: 10px;
+        }
+        
+        .mobile-controls {
+            position: fixed; bottom: 20px; left: 20px; right: 20px;
+            display: flex; justify-content: space-between; align-items: flex-end;
+            z-index: 100; pointer-events: none;
+        }
+        .joystick-base {
+            width: 120px; height: 120px; border-radius: 50%;
+            background: rgba(255,255,255,0.15); pointer-events: all;
+            display: flex; justify-content: center; align-items: center;
+        }
+        .joystick-thumb { width: 50px; height: 50px; border-radius: 50%; background: rgba(255,255,255,0.4); }
+        .action-btns { display: flex; gap: 15px; pointer-events: all; }
+        .action-btn {
+            width: 70px; height: 70px; border-radius: 50%;
+            color: white; border: none; font-size: 24px; cursor: pointer;
+        }
+    </style>
+
+    <script type="importmap">
+    {
+        "imports": {
+            "react": "https://esm.sh/react@18.3.1",
+            "react/": "https://esm.sh/react@18.3.1/",
+            "react-dom/client": "https://esm.sh/react-dom@18.3.1/client",
+            "react-dom": "https://esm.sh/react-dom@18.3.1",
+            "three": "https://esm.sh/three@0.164.0",
+            "three/": "https://esm.sh/three@0.164.0/",
+            "@react-three/fiber": "https://esm.sh/@react-three/fiber@8.16.2?deps=react@18.3.1,react-dom@18.3.1,three@0.164.0",
+            "@react-three/drei": "https://esm.sh/@react-three/drei@9.105.6?deps=react@18.3.1,react-dom@18.3.1,three@0.164.0,@react-three/fiber@8.16.2"
+        }
+    }
+    </script>
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+</head>
+<body>
+    <div id="root"></div>
+
+    <script type="text/babel" data-type="module">
+        import React, { useState, useEffect, Suspense, createContext, useContext, useRef, useMemo } from 'react';
+        import { createRoot } from 'react-dom/client';
+        import * as THREE from 'three';
+        import { Canvas, useFrame, useThree } from '@react-three/fiber';
+        import { OrbitControls, Environment } from '@react-three/drei';
+
+        // Мы динамически загрузим наш локальный Vanilla код Комнаты 1
+        const room1Module = await import('./Room1Vanilla.js');
+
+        // --- Store (React Context) ---
+        const StoreContext = createContext(null);
+        const useStore = () => useContext(StoreContext);
+
+        const StoreProvider = ({ children }) => {
+            const [character, setCharacter] = useState(null); // 'Vell' or 'Any'
+            const [foundHugs, setFoundHugs] = useState({ 'Room1Scene': [], 'Room2Scene': [] });
+            const [currentRoom, setCurrentRoom] = useState('Room1Scene');
+            const [doorOpened, setDoorOpened] = useState({ 'Room1Scene': false });
+
+            const addHug = (room, hugId) => {
+                setFoundHugs(prev => {
+                    const roomHugs = prev[room] || [];
+                    if (!roomHugs.includes(hugId)) {
+                        const newHugs = [...roomHugs, hugId];
+                        // Проверяем, открыли ли мы дверь (например, нужно 3 объятия)
+                        if (newHugs.length >= 3) {
+                            setDoorOpened(d => ({...d, [room]: true}));
+                        }
+                        return { ...prev, [room]: newHugs };
+                    }
+                    return prev;
+                });
+            };
+
+            return (
+                <StoreContext.Provider value={{ character, setCharacter, currentRoom, setCurrentRoom, foundHugs, addHug, doorOpened }}>
+                    {children}
+                </StoreContext.Provider>
+            );
+        };
+
+        // --- Transition Manager ---
+        const TransitionContext = createContext(null);
+        const useTransition = () => useContext(TransitionContext);
+
+        const TransitionProvider = ({ children }) => {
+            const { currentRoom, setCurrentRoom } = useStore();
+            const [isTransitioning, setIsTransitioning] = useState(false);
+            const [fadeOpacity, setFadeOpacity] = useState(0);
+
+            const startTransition = (nextScene) => {
+                setIsTransitioning(true);
+                setFadeOpacity(1); // Fade Out
+                
+                setTimeout(() => {
+                    setCurrentRoom(nextScene);
+                }, 800);
+            };
+
+            const onSceneReady = () => {
+                setTimeout(() => {
+                    setFadeOpacity(0); // Fade In
+                    setTimeout(() => setIsTransitioning(false), 800);
+                }, 200);
+            };
+
+            return (
+                <TransitionContext.Provider value={{ isTransitioning, startTransition, onSceneReady }}>
+                    {children}
+                    <div className={`fade-overlay ${fadeOpacity > 0 ? 'active' : ''}`} style={{ opacity: fadeOpacity }}>
+                        {isTransitioning && <h2 style={{color:'white'}}>Переход в следующую комнату...</h2>}
+                    </div>
+                </TransitionContext.Provider>
+            );
+        };
+
+        // --- Room1Scene (Hybrid React Wrapper over Vanilla JS) ---
+        const Room1Scene = () => {
+            const { scene, camera } = useThree();
+            const { onSceneReady, startTransition } = useTransition();
+            const { character, addHug, doorOpened } = useStore();
+            const groupRef = useRef();
+
+            useEffect(() => {
+                // Инициализируем Vanilla код внутри React Group!
+                room1Module.initRoom1(groupRef.current, camera, 
+                    (hugType) => {
+                        console.log("Found hug:", hugType);
+                        addHug('Room1Scene', hugType);
+                    },
+                    () => {}
+                );
+
+                // Запускаем персонажа
+                room1Module.startRoom1Char(character === 'Vell');
+                onSceneReady();
+
+                return () => {
+                    // Очистка при переходе
+                    groupRef.current.clear();
+                };
+            }, [character]);
+
+            useFrame((state, dt) => {
+                room1Module.updateRoom1(dt);
+            });
+
+            // Обработчик клика по двери
+            const handleDoorClick = (e) => {
+                e.stopPropagation();
+                if (doorOpened['Room1Scene']) {
+                    startTransition('Room2Scene');
+                } else {
+                    alert("Сначала найди 3 уникальных объятия в этой комнате, чтобы открыть дверь!");
+                }
+            };
+
+            return (
+                <group ref={groupRef}>
+                    {/* Рендерим дверь, которую можно кликнуть (перехватываем R3F события) */}
+                    <mesh position={[0, 2, -12.9]} onClick={handleDoorClick} cursor="pointer">
+                        <boxGeometry args={[2.2, 4.2, 0.4]} />
+                        <meshStandardMaterial color={doorOpened['Room1Scene'] ? "#88ff88" : "#ff4444"} transparent opacity={0.5} />
+                    </mesh>
+                </group>
+            );
+        };
+
+        // --- Room2Scene (React Declarative) ---
+        const Room2Scene = () => {
+            const { onSceneReady, startTransition } = useTransition();
+            const { addHug } = useStore();
+
+            useEffect(() => {
+                onSceneReady();
+            }, []);
+
+            return (
+                <group>
+                    <ambientLight intensity={0.6} />
+                    <directionalLight position={[10, 10, 5]} intensity={1.5} />
+                    <Environment preset="apartment" />
+                    
+                    {/* Placeholder Room */}
+                    <mesh position={[0, -1.5, 0]}>
+                        <boxGeometry args={[10, 0.5, 10]} />
+                        <meshStandardMaterial color="#3a4b5c" />
+                    </mesh>
+                    
+                    <mesh position={[0, 0, 0]}>
+                        <capsuleGeometry args={[0.3, 1, 4, 8]} />
+                        <meshStandardMaterial color="#ffcc88" />
+                    </mesh>
+
+                    {/* Hug Interaction */}
+                    <mesh position={[2, 0, 2]} onClick={() => addHug('Room2Scene', 'hug_' + Math.random())}>
+                        <boxGeometry args={[1, 1, 1]} />
+                        <meshStandardMaterial color="#ff66b3" />
+                    </mesh>
+
+                    <OrbitControls target={[0, 0, 0]} maxPolarAngle={Math.PI / 2} />
+                </group>
+            );
+        };
+
+        // --- UI ---
+        const HUD = () => {
+            const { foundHugs, currentRoom, doorOpened } = useStore();
+            const hugs = foundHugs[currentRoom] || [];
+            const isOpen = doorOpened[currentRoom];
+
+            return (
+                <div className="hud">
+                    <h2>Объятия: {hugs.length} / 3</h2>
+                    {isOpen ? <p style={{color:'#88ff88'}}>🚪 Дверь открыта! Кликни по ней.</p> : <p>Найди 3 разных позы, чтобы открыть дверь.</p>}
+                </div>
+            );
+        };
+
+        const CharacterSelection = () => {
+            const { setCharacter } = useStore();
+            return (
+                <div className="char-select">
+                    <h1 style={{fontSize: '50px'}}>Cozy House SPA</h1>
+                    <p>Выбери персонажа</p>
+                    <div>
+                        <button className="char-btn" onClick={() => setCharacter('Vell')}>Играть за Vell</button>
+                        <button className="char-btn" onClick={() => setCharacter('Any')}>Играть за Any</button>
+                    </div>
+                </div>
+            );
+        }
+
+        const MobileControls = () => (
+            <div className="mobile-controls">
+                <div className="joystick-base"><div className="joystick-thumb"></div></div>
+                <div className="action-btns">
+                    <button className="action-btn" style={{background: '#4da6ff'}}>🤝</button>
+                    <button className="action-btn" style={{background: '#ff66b3'}}>🫂</button>
+                </div>
+            </div>
+        );
+
+        // --- Main App ---
+        const App = () => {
+            const { character, currentRoom } = useStore();
+
+            if (!character) return <CharacterSelection />;
+
+            return (
+                <TransitionProvider>
+                    <HUD />
+                    <Canvas camera={{ position: [0, 5, 9], fov: 58 }} shadows>
+                        <Suspense fallback={null}>
+                            {currentRoom === 'Room1Scene' && <Room1Scene />}
+                            {currentRoom === 'Room2Scene' && <Room2Scene />}
+                        </Suspense>
+                    </Canvas>
+                    <MobileControls />
+                </TransitionProvider>
+            );
+        };
+
+        const root = createRoot(document.getElementById('root'));
+        root.render(<StoreProvider><App /></StoreProvider>);
+    </script>
+</body>
+</html>

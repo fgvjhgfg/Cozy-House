@@ -1,0 +1,16 @@
+node_modules/
+dist/
+.env
+.env.local
+*.log
+output.log
+
+# Debug scripts
+debug*.js
+test_*.js
+test_*.mjs
+*.png
+*.zip
+clean_dom.py
+converter.py
+puppeteer_test.js
