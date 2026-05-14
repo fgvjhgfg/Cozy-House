@@ -174,6 +174,8 @@ const usePlayerControls = () => {
     };
     window.addEventListener('keydown', dn);
     window.addEventListener('keyup',   up);
+    // DEV: expose controls globally for testing
+    (window as any).__r2controls = mv.current;
     return () => { window.removeEventListener('keydown', dn); window.removeEventListener('keyup', up); };
   }, []);
   return mv;
@@ -227,7 +229,7 @@ const CharacterBody = ({
   });
 
   // ── Clone + scale + seat on floor ────────────────────────────────────────────
-  const clone = useMemo(() => {
+  const cloneData = useMemo(() => {
     const c = SkeletonUtils.clone(model.scene);
 
     // For Vell: the GLB model lies on its side (rotation baked in).
@@ -252,9 +254,9 @@ const CharacterBody = ({
     if (modelRotationX) c.rotation.x = modelRotationX;
     c.updateMatrixWorld(true);
 
-    // Seat model on floor: shift so bottom of bbox is at y=0
-    const sb = new THREE.Box3().setFromObject(c);
-    c.position.y -= sb.min.y;
+    const sb     = new THREE.Box3().setFromObject(c);
+    const floorY = -sb.min.y; // how much to lift clone so feet are at y=0
+    c.position.y = floorY;
 
     c.traverse(o => {
       if ((o as THREE.Mesh).isMesh) {
@@ -274,9 +276,12 @@ const CharacterBody = ({
         });
       }
     });
-    return c;
+    return { c, floorY };
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [model.scene, targetHeight, charKey, modelRotationX]);
+
+  const clone  = cloneData.c;
+  const floorY = cloneData.floorY;
 
   // ── Setup mixer + animations ──────────────────────────────────────────────────
   useEffect(() => {
@@ -306,9 +311,12 @@ const CharacterBody = ({
       // Walk GLB may be cumulative — take the LAST animation (same as pose files)
       const allWalkAnims = walkGlb.animations;
       const walkRaw = allWalkAnims[allWalkAnims.length - 1];
-      // Both chars: strip root-motion positions only (standard root motion strip).
-      // Vell's skeleton is now in native (unrotated) space, so no special treatment needed.
-      const clip = adaptClip(walkRaw.clone(), clone, `${charKey}/walk`, false);
+      // For Vell (modelRotationX=-π/2): c.rotation.x maps bone-Z → world-Y (up).
+      // Any root bone motion (pos OR rot) drives visual mesh upward during walk.
+      // Strip ALL root bone tracks so walk is in-place; physics drives movement.
+      // For Anny (no rotation): strip only root positions (standard root motion).
+      const stripRootAll = !!modelRotationX;
+      const clip = adaptClip(walkRaw.clone(), clone, `${charKey}/walk`, stripRootAll);
       const act  = mixer.clipAction(clip);
       act.setLoop(THREE.LoopRepeat, Infinity);
       // Anny walk slower (0.55) to match her movement speed and avoid slide
@@ -353,9 +361,13 @@ const CharacterBody = ({
   // ── Per-frame logic ───────────────────────────────────────────────────────────
   useFrame((_, delta) => {
     mixerRef.current?.update(delta);
-    // Reset clone root XZ position every frame — prevents walk animation from drifting
-    // the visual mesh horizontally. Y is preserved (floor-seating offset from useMemo).
-    if (clone) { clone.position.x = 0; clone.position.z = 0; }
+    // Freeze clone position AND rotation every frame:
+    // - position: prevents walk anim root drift (XZ=0, Y=floorY)
+    // - rotation: prevents walk anim root rotation from flipping Vell upside-down
+    if (clone) {
+      clone.position.set(0, floorY, 0);
+      if (modelRotationX) clone.rotation.set(modelRotationX, 0, 0);
+    }
     // Hard-lock upright orientation every frame.
     // Trimesh wall contacts can flip the character despite lockRotations.
     if (rb.current) {
