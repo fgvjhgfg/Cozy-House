@@ -224,7 +224,7 @@ const usePlayerControls = () => {
 // ── CharacterBody ─────────────────────────────────────────────────────────────
 const CharacterBody = ({
   modelUrl, idleAnimUrl, walkAnimUrl, isPlayer, spawnPos, targetHeight,
-  colliderArgs, colliderOffset, charKey, poseUrls, modelRotationX,
+  colliderArgs, colliderOffset, charKey, poseUrls, modelRotationX, visualOffsetY = 0,
 }: {
   modelUrl: string;
   idleAnimUrl?: string;
@@ -237,6 +237,7 @@ const CharacterBody = ({
   charKey: 'anny' | 'vell';
   poseUrls: [string,string,string,string];
   modelRotationX?: number;
+  visualOffsetY?: number;
 }) => {
   const DUMMY = '/animations/AnyIdle.glb';
   const model   = useGLTF(modelUrl);
@@ -427,7 +428,7 @@ const CharacterBody = ({
     // For Vell (modelRotationX): offset is along native Z axis.
     // For Anny (no rotation): offset is along Y axis.
     if (clone) {
-      clone.position.set(0, floorY, 0);
+      clone.position.set(0, floorY + visualOffsetY, 0);
       const inPose = poseState.activePose !== null;
       clone.traverse(o => {
         const bone = o as THREE.Bone;
@@ -787,6 +788,7 @@ export const Room2Scene = () => {
               targetHeight={0.8}
               colliderArgs={[0.12, 0.35]}
               colliderOffset={[0, 0.47, 0]}
+              visualOffsetY={0.2}
             />
             {/* Vell: без idle (стоит без анимации), walk только когда его ведут */}
             <CharacterBody
@@ -798,7 +800,8 @@ export const Room2Scene = () => {
               spawnPos={[0.5, 3, 0]}
               targetHeight={4.0}
               colliderArgs={[0.13, 0.38]}
-              colliderOffset={[0, 0.51, 0]}
+              colliderOffset={[0, 0.36, 0]}
+              visualOffsetY={0}
               modelRotationX={-Math.PI / 2}
             />
           </Suspense>
