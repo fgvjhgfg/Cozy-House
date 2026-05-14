@@ -788,7 +788,7 @@ export const Room2Scene = () => {
               targetHeight={0.8}
               colliderArgs={[0.12, 0.35]}
               colliderOffset={[0, 0.47, 0]}
-              visualOffsetY={0.2}
+              visualOffsetY={0.7}
             />
             {/* Vell: без idle (стоит без анимации), walk только когда его ведут */}
             <CharacterBody
@@ -801,7 +801,7 @@ export const Room2Scene = () => {
               targetHeight={4.0}
               colliderArgs={[0.13, 0.38]}
               colliderOffset={[0, 0.36, 0]}
-              visualOffsetY={0}
+              visualOffsetY={-0.15}
               modelRotationX={-Math.PI / 2}
             />
           </Suspense>
