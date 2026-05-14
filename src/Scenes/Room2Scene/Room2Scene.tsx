@@ -363,10 +363,22 @@ const CharacterBody = ({
     mixerRef.current?.update(delta);
     // Freeze clone position AND rotation every frame:
     // - position: prevents walk anim root drift (XZ=0, Y=floorY)
-    // - rotation: prevents walk anim root rotation from flipping Vell upside-down
+    // - rotation: prevents walk anim root rotation from flipping Vell
     if (clone) {
       clone.position.set(0, floorY, 0);
       if (modelRotationX) clone.rotation.set(modelRotationX, 0, 0);
+      // For rotated models (Vell): walk animation root bones move in Z_local
+      // which becomes Y_world (up) due to the -π/2 X rotation.
+      // Reset EVERY root bone position (parent = non-bone) after mixer update.
+      // Works regardless of bone naming (mixamo, bip, custom rigs).
+      if (modelRotationX) {
+        clone.traverse(o => {
+          const bone = o as THREE.Bone;
+          if (bone.isBone && !(bone.parent as THREE.Bone | null)?.isBone) {
+            bone.position.set(0, 0, 0);
+          }
+        });
+      }
     }
     // Hard-lock upright orientation every frame.
     // Trimesh wall contacts can flip the character despite lockRotations.
