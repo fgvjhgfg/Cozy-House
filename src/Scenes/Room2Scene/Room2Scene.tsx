@@ -154,6 +154,46 @@ function adaptClip(
   return stripHipsPosition(result);
 }
 
+// Compensates pose clip quaternion tracks for the -π/2 wrapper rotation.
+// Pose animations were recorded for an UPRIGHT model, but the clone lives in
+// native (lying) space. The rotWrapper applies -π/2 visually.
+// To cancel this mismatch, pre-multiply every root bone quaternion keyframe by +π/2.
+function compensatePoseClip(
+  clip: THREE.AnimationClip,
+  root: THREE.Object3D
+): THREE.AnimationClip {
+  const comp = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(1, 0, 0), Math.PI / 2);
+  const boneMap = new Map<string, string>();
+  root.traverse(o => {
+    if ((o as any).isBone) boneMap.set(normBone(o.name), o.name);
+  });
+  clip.tracks.forEach(t => {
+    const dot  = t.name.indexOf('.');
+    const bone = dot !== -1 ? t.name.slice(0, dot) : t.name;
+    const prop = dot !== -1 ? t.name.slice(dot) : '';
+    const isRoot = [...boneMap.values()].some(real => {
+      // Match the track's bone name against the model's actual bone name
+      const realNorm = normBone(real);
+      const boneNorm = normBone(bone);
+      // Only process root bones (direct children of non-bone parents)
+      if (realNorm !== boneNorm) return false;
+      const obj = root.getObjectByName(real);
+      return obj && obj.parent && !(obj.parent as any).isBone;
+    });
+    if (isRoot && prop.includes('quaternion')) {
+      const qt = t as THREE.QuaternionKeyframeTrack;
+      const tmp = new THREE.Quaternion();
+      for (let i = 0; i < qt.values.length; i += 4) {
+        tmp.set(qt.values[i], qt.values[i+1], qt.values[i+2], qt.values[i+3]);
+        tmp.premultiply(comp);
+        qt.values[i] = tmp.x; qt.values[i+1] = tmp.y;
+        qt.values[i+2] = tmp.z; qt.values[i+3] = tmp.w;
+      }
+    }
+  });
+  return clip;
+}
+
 // ── Keyboard hook ─────────────────────────────────────────────────────────────
 const usePlayerControls = () => {
   const mv = useRef({ forward: false, backward: false, left: false, right: false });
@@ -207,8 +247,9 @@ const CharacterBody = ({
   const p2 = useGLTF(poseUrls[2]);
   const p3 = useGLTF(poseUrls[3]);
 
-  // group — поворачивается для facing direction (rotation.y)
+  // group — facing direction (rotation.y); rotWrapper — visual X-rotation for Vell
   const group        = useRef<THREE.Group>(null);
+  const rotWrapper   = useRef<THREE.Group>(null); // carries modelRotationX for Vell
   const rb           = useRef<RapierRigidBody>(null);
   const controls     = usePlayerControls();
 
@@ -220,6 +261,11 @@ const CharacterBody = ({
   const frozenPos = useRef<{ x: number; y: number; z: number } | null>(null);
   // Track walk state to avoid redundant reset() calls that cause visual snapping
   const isWalking = useRef(false);
+  // Stores T-pose position AND quaternion of root bones (before any animation plays).
+  // resetToTpose() XZ position → prevents root-motion drift
+  // resetToTpose() Y position  → keeps native Y offset (prevents Anny sinking / Vell floating)
+  // resetToTpose() quaternion  → (Vell walk only) prevents Mixamo hips 90° flip
+  const rootBoneTpose = useRef<Map<string, { pos: THREE.Vector3; quat: THREE.Quaternion }>>(new Map());
 
   useFrame(() => {
     if (!isPlayer) {
@@ -232,31 +278,28 @@ const CharacterBody = ({
   const cloneData = useMemo(() => {
     const c = SkeletonUtils.clone(model.scene);
 
-    // For Vell: the GLB model lies on its side (rotation baked in).
-    // We measure bbox in its NATIVE orientation (before any rotation).
-    // Then we rotate only the WRAPPER GROUP in JSX — NOT the clone itself,
-    // so that skeleton animation tracks work in original bone space.
+    // APPROACH: Clone stays UNROTATED (native GLB space).
+    // ALL Vell animations (walk AND poses) are recorded in native GLB space.
+    // Visual upright rotation applied in JSX via rotWrapper (rotation.x = modelRotationX).
     c.updateMatrixWorld(true);
     const box0 = new THREE.Box3().setFromObject(c);
     const sz0  = new THREE.Vector3(); box0.getSize(sz0);
     console.log(`[${charKey}] bbox native: x=${sz0.x.toFixed(3)} y=${sz0.y.toFixed(3)} z=${sz0.z.toFixed(3)}`);
 
-    // rawH = dimension that becomes the character's HEIGHT after rotation.
-    // Vell: lies along Z in GLB (-π/2 X rot → Z becomes Y_world). Use sz0.z.
-    // Anny: stands upright. Use sz0.y.
     const rawH = modelRotationX ? sz0.z : sz0.y;
-    console.log(`[${charKey}] rawH=${rawH.toFixed(3)} target=${targetHeight} scale=${(targetHeight/rawH).toFixed(3)}`);
-
-    // Scale uniformly to target height
     if (rawH > 0) c.scale.multiplyScalar(targetHeight / rawH);
-
-    // Apply rotation to clone directly (Vell lies in GLB, rotate upright)
-    if (modelRotationX) c.rotation.x = modelRotationX;
+    console.log(`[${charKey}] rawH=${rawH.toFixed(3)} target=${targetHeight} scale=${(targetHeight/rawH).toFixed(3)}`);
     c.updateMatrixWorld(true);
 
-    const sb     = new THREE.Box3().setFromObject(c);
-    const floorY = -sb.min.y; // how much to lift clone so feet are at y=0
-    c.position.y = floorY;
+    const sb = new THREE.Box3().setFromObject(c);
+    // rotation.x = -π/2 maps native (x,y,z) → world (x, z, -y).
+    // So world_y = native_z → lowest world point = sb.min.z.
+    // wrapperFloorY lifts rotWrapper so that sb.min.z aligns with group Y=0.
+    const wrapperFloorY = modelRotationX ? -sb.min.z : 0;
+    // Anny: just lift clone so native min.y = 0
+    const floorY = modelRotationX ? 0 : -sb.min.y;
+    if (!modelRotationX) c.position.y = floorY;
+    console.log(`[${charKey}] wrapperFloorY=${wrapperFloorY.toFixed(3)} floorY=${floorY.toFixed(3)}`);
 
     c.traverse(o => {
       if ((o as THREE.Mesh).isMesh) {
@@ -276,12 +319,13 @@ const CharacterBody = ({
         });
       }
     });
-    return { c, floorY };
+    return { c, wrapperFloorY, floorY };
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [model.scene, targetHeight, charKey, modelRotationX]);
 
-  const clone  = cloneData.c;
-  const floorY = cloneData.floorY;
+  const clone          = cloneData.c;
+  const floorY         = cloneData.floorY;
+  const wrapperFloorY  = cloneData.wrapperFloorY;
 
   // ── Setup mixer + animations ──────────────────────────────────────────────────
   useEffect(() => {
@@ -311,16 +355,14 @@ const CharacterBody = ({
       // Walk GLB may be cumulative — take the LAST animation (same as pose files)
       const allWalkAnims = walkGlb.animations;
       const walkRaw = allWalkAnims[allWalkAnims.length - 1];
-      // For Vell (modelRotationX=-π/2): c.rotation.x maps bone-Z → world-Y (up).
-      // Any root bone motion (pos OR rot) drives visual mesh upward during walk.
-      // Strip ALL root bone tracks so walk is in-place; physics drives movement.
-      // For Anny (no rotation): strip only root positions (standard root motion).
-      const stripRootAll = !!modelRotationX;
-      const clip = adaptClip(walkRaw.clone(), clone, `${charKey}/walk`, stripRootAll);
+      // Strip only root bone POSITION (prevents root-motion drift in XYZ).
+      // Keep root bone ROTATION for walk lean/bob — it works correctly because
+      // the clone is UNROTATED (native GLB space) and walk anim was recorded in native space.
+      const clip = adaptClip(walkRaw.clone(), clone, `${charKey}/walk`, false);
       const act  = mixer.clipAction(clip);
       act.setLoop(THREE.LoopRepeat, Infinity);
-      // Anny walk slower (0.55) to match her movement speed and avoid slide
-      act.timeScale = charKey === 'anny' ? 0.55 : 1.0;
+      // Anny walk slower (0.55), Vell walk also slowed (0.6) to match movement speed
+      act.timeScale = charKey === 'anny' ? 0.55 : 0.6;
       walkAct.current = act;
       console.log(`[${charKey}] walk ready — ANIM[${allWalkAnims.length - 1}] "${walkRaw.name}" (${clip.tracks.length} tracks, timeScale=${act.timeScale})`);
     } else if (walkAnimUrl) {
@@ -339,7 +381,10 @@ const CharacterBody = ({
         console.warn(`[${charKey}] pose${i + 1} — no animations in GLB!`);
         return null;
       }
-      const clip = adaptClip(raw.clone(), clone, `${charKey}/pose${i + 1}`);
+      let clip = adaptClip(raw.clone(), clone, `${charKey}/pose${i + 1}`);
+      // For Vell (native/lying clone + -π/2 rotWrapper): poses were recorded for upright model.
+      // Compensate root bone quaternion tracks by +π/2 to cancel the wrapper mismatch.
+      if (modelRotationX) clip = compensatePoseClip(clip, clone);
       const act = mixer.clipAction(clip);
       // Short clips (< 0.5s) are static poses — clamp at last frame to hold the pose.
       // Longer clips are real looping animations.
@@ -354,6 +399,22 @@ const CharacterBody = ({
       return act;
     });
 
+    // Snapshot T-pose position AND quaternion of root bones.
+    {
+      const tposeMap = new Map<string, { pos: THREE.Vector3; quat: THREE.Quaternion }>();
+      clone.traverse(o => {
+        const bone = o as THREE.Bone;
+        if (bone.isBone && !(bone.parent as THREE.Bone | null)?.isBone) {
+          tposeMap.set(bone.uuid, {
+            pos:  bone.position.clone(),
+            quat: bone.quaternion.clone(),
+          });
+        }
+      });
+      rootBoneTpose.current = tposeMap;
+      console.log(`[${charKey}] T-pose captured for ${tposeMap.size} root bone(s)`);
+    }
+
     return () => { mixer.stopAllAction(); mixer.uncacheRoot(clone); };
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [clone, idleAnimUrl, walkAnimUrl, idleGlb, walkGlb, p0, p1, p2, p3]);
@@ -361,24 +422,29 @@ const CharacterBody = ({
   // ── Per-frame logic ───────────────────────────────────────────────────────────
   useFrame((_, delta) => {
     mixerRef.current?.update(delta);
-    // Freeze clone position AND rotation every frame:
-    // - position: prevents walk anim root drift (XZ=0, Y=floorY)
-    // - rotation: prevents walk anim root rotation from flipping Vell
+    // Lock clone position to prevent root-motion drift.
+    // clone has NO rotation (rotation lives in rotWrapper group in JSX).
+    // For Vell (modelRotationX): offset is along native Z axis.
+    // For Anny (no rotation): offset is along Y axis.
     if (clone) {
       clone.position.set(0, floorY, 0);
-      if (modelRotationX) clone.rotation.set(modelRotationX, 0, 0);
-      // For rotated models (Vell): walk animation root bones move in Z_local
-      // which becomes Y_world (up) due to the -π/2 X rotation.
-      // Reset EVERY root bone position (parent = non-bone) after mixer update.
-      // Works regardless of bone naming (mixamo, bip, custom rigs).
-      if (modelRotationX) {
-        clone.traverse(o => {
-          const bone = o as THREE.Bone;
-          if (bone.isBone && !(bone.parent as THREE.Bone | null)?.isBone) {
+      const inPose = poseState.activePose !== null;
+      clone.traverse(o => {
+        const bone = o as THREE.Bone;
+        if (bone.isBone && !(bone.parent as THREE.Bone | null)?.isBone) {
+          const tp = rootBoneTpose.current.get(bone.uuid);
+          if (modelRotationX) {
+            // Vell: zero root bone position.
+            // In pose mode: clip was pre-compensated by compensatePoseClip() at load time.
+            // In walk/idle: reset quaternion to T-pose to prevent Mixamo hips 90° flip.
+            bone.position.set(0, 0, 0);
+            if (!inPose && tp) bone.quaternion.copy(tp.quat);
+          } else {
+            // Anny: zero root bone position.
             bone.position.set(0, 0, 0);
           }
-        });
-      }
+        }
+      });
     }
     // Hard-lock upright orientation every frame.
     // Trimesh wall contacts can flip the character despite lockRotations.
@@ -506,7 +572,16 @@ const CharacterBody = ({
     <RigidBody ref={rb} type="dynamic" lockRotations friction={0} colliders={false} canSleep={false} position={spawnPos}>
       <CapsuleCollider args={colliderArgs} position={colliderOffset} />
       <group ref={group}>
-        <primitive object={clone} />
+        {/* rotWrapper: carries visual X-rotation for Vell (-π/2) and floor-Y offset.
+            Clone stays in native GLB space; rotWrapper makes Vell appear upright.
+            wrapperFloorY positions feet at world Y=0 (= RigidBody floor level). */}
+        <group
+          ref={rotWrapper}
+          rotation={[modelRotationX ?? 0, 0, 0]}
+          position={[0, wrapperFloorY, 0]}
+        >
+          <primitive object={clone} />
+        </group>
       </group>
     </RigidBody>
   );
