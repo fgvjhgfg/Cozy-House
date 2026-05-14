@@ -296,11 +296,11 @@ const CharacterBody = ({
     // rotation.x = -π/2 maps native (x,y,z) → world (x, z, -y).
     // So world_y = native_z → lowest world point = sb.min.z.
     // wrapperFloorY lifts rotWrapper so that sb.min.z aligns with group Y=0.
-    const wrapperFloorY = modelRotationX ? -sb.min.z : 0;
-    // Anny: just lift clone so native min.y = 0
-    const floorY = modelRotationX ? 0 : -sb.min.y;
+    const wrapperFloorY = modelRotationX ? -sb.min.z + visualOffsetY : 0;
+    // Anny: lift clone so native min.y = 0, plus visualOffsetY
+    const floorY = modelRotationX ? 0 : -sb.min.y + visualOffsetY;
     if (!modelRotationX) c.position.y = floorY;
-    console.log(`[${charKey}] wrapperFloorY=${wrapperFloorY.toFixed(3)} floorY=${floorY.toFixed(3)}`);
+    console.log(`[${charKey}] wrapperFloorY=${wrapperFloorY.toFixed(3)} floorY=${floorY.toFixed(3)} visualOffsetY=${visualOffsetY}`);
 
     c.traverse(o => {
       if ((o as THREE.Mesh).isMesh) {
@@ -322,7 +322,7 @@ const CharacterBody = ({
     });
     return { c, wrapperFloorY, floorY };
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [model.scene, targetHeight, charKey, modelRotationX]);
+  }, [model.scene, targetHeight, charKey, modelRotationX, visualOffsetY]);
 
   const clone          = cloneData.c;
   const floorY         = cloneData.floorY;
@@ -788,7 +788,7 @@ export const Room2Scene = () => {
               targetHeight={0.8}
               colliderArgs={[0.12, 0.35]}
               colliderOffset={[0, 0.47, 0]}
-              visualOffsetY={0.7}
+              visualOffsetY={0.4}
             />
             {/* Vell: без idle (стоит без анимации), walk только когда его ведут */}
             <CharacterBody
@@ -801,7 +801,7 @@ export const Room2Scene = () => {
               targetHeight={4.0}
               colliderArgs={[0.13, 0.38]}
               colliderOffset={[0, 0.36, 0]}
-              visualOffsetY={-0.15}
+              visualOffsetY={-0.5}
               modelRotationX={-Math.PI / 2}
             />
           </Suspense>
