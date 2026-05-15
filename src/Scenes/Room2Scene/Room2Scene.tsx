@@ -821,7 +821,8 @@ export const Room2Scene = () => {
               poseSpawns={[
                 { pos: [1.948, -0.968, 3.471], rotY: THREE.MathUtils.degToRad(-140.260) }, // Pose 1: объятия
                 { pos: [-1.506, -0.048, -4.735], rotY: THREE.MathUtils.degToRad(-60.046) }, // Pose 2
-                null, null,
+                { pos: [2.899, -0.656, -1.049], rotY: THREE.MathUtils.degToRad(86.173) },  // Pose 3
+                { pos: [2.821, -0.808, 1.656],  rotY: THREE.MathUtils.degToRad(-94.423) }, // Pose 4
               ]}
             />
             {/* Vell: без idle (стоит без анимации), walk только когда его ведут */}
@@ -840,7 +841,8 @@ export const Room2Scene = () => {
               poseSpawns={[
                 { pos: [-0.507, 0.149, 0.670], rotY: THREE.MathUtils.degToRad(41.253) }, // Pose 1: объятия
                 { pos: [-2.074, 0.149, -3.654], rotY: THREE.MathUtils.degToRad(152.636) }, // Pose 2: объятия
-                null, null,
+                { pos: [5.697, -0.675, 0.018], rotY: THREE.MathUtils.degToRad(274.103) }, // Pose 3
+                { pos: [0.425, 0.053, 3.193],   rotY: THREE.MathUtils.degToRad(91.032) },  // Pose 4 (451.032-360)
               ]}
             />
           </Suspense>
