@@ -6,7 +6,7 @@ import * as THREE from 'three';
 import { useFrame } from '@react-three/fiber';
 import { Physics, RigidBody, RapierRigidBody, CapsuleCollider, CuboidCollider } from '@react-three/rapier';
 import { SkeletonUtils } from 'three/examples/jsm/Addons.js';
-import { DebugCharPoser } from '../../_DEBUG_CharPoser'; // DEBUG_CHAR_POSER
+// import { DebugCharPoser } from '../../_DEBUG_CharPoser'; // DEBUG_CHAR_POSER (раскомментировать чтобы включить)
 
 // ── URLs ──────────────────────────────────────────────────────────────────────
 // 3-stage compression: Meshopt geometry + 2048×2048 resize + WebP/KTX2 textures = −86% vs original
@@ -853,7 +853,7 @@ export const Room2Scene = () => {
       </Physics>
 
       <Room2Interactions />
-      <DebugCharPoser /> {/* DEBUG_CHAR_POSER */}
+      {/* <DebugCharPoser /> */} {/* DEBUG_CHAR_POSER (раскомментировать чтобы включить) */}
       <OrbitControls makeDefault target={[0, 1, 0]} maxPolarAngle={Math.PI / 2 + 0.1} minDistance={2} maxDistance={15} />
     </group>
   );
