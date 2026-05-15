@@ -209,6 +209,12 @@ const usePlayerControls = () => {
 // ── CharacterBody ─────────────────────────────────────────────────────────────
 type PoseSpawn = { pos: [number,number,number]; rotY: number } | null;
 
+// ── Initial spawn positions (used to reset after pose 4) ─────────────────────
+const ANNY_INITIAL_SPAWN: [number,number,number] = [0.751, 1, 0.977];
+const VELL_INITIAL_SPAWN: [number,number,number] = [-0.721, 3, 0.395];
+// Shared flag: when true, CharacterBody will teleport to initial spawn on next frame
+const pendingSpawnReset = { anny: false, vell: false };
+
 const CharacterBody = ({
   modelUrl, idleAnimUrl, walkAnimUrl, isPlayer, spawnPos, targetHeight,
   colliderArgs, colliderOffset, charKey, poseUrls, modelRotationX, visualOffsetY = 0,
@@ -228,6 +234,8 @@ const CharacterBody = ({
   visualOffsetY?: number;
   /** Per-pose teleport targets: index = pose number - 1. null = use current position. */
   poseSpawns?: PoseSpawn[];
+  /** Initial spawn pos used for reset-to-spawn after pose 4 */
+  initialSpawn?: [number,number,number];
 }) => {
   const DUMMY = '/animations/AnyIdle.glb';
   const model   = useGLTF(modelUrl);
@@ -484,6 +492,7 @@ const CharacterBody = ({
 
     // ── EXIT POSE ──────────────────────────────────────────────────────────────
     if (lastPose.current !== null) {
+      const wasLastPose = lastPose.current === 4;
       poseActs.current.forEach(a => a?.fadeOut(0.2));
       lastPose.current  = null;
       frozenPos.current = null;
@@ -491,6 +500,19 @@ const CharacterBody = ({
       // Restore dynamic physics so character can move again
       rb.current.setBodyType(0, true); // 0 = Dynamic
       if (idleAct.current) { idleAct.current.reset().fadeIn(0.2).play(); }
+      // After pose 4: teleport back to initial Room 2 spawn
+      if (wasLastPose && pendingSpawnReset[charKey] !== undefined) {
+        pendingSpawnReset[charKey] = true;
+      }
+    }
+    // Delayed spawn-reset (needs Dynamic body already restored)
+    if (pendingSpawnReset[charKey]) {
+      pendingSpawnReset[charKey] = false;
+      const spawn = charKey === 'anny' ? ANNY_INITIAL_SPAWN : VELL_INITIAL_SPAWN;
+      rb.current.setTranslation({ x: spawn[0], y: spawn[1], z: spawn[2] }, true);
+      rb.current.setLinvel({ x: 0, y: 0, z: 0 }, true);
+      if (group.current) group.current.rotation.y = 0;
+      console.log(`[${charKey}] reset to initial spawn`, spawn);
     }
 
     // ── NPC: переключение idle ↔ walk ─────────────────────────────────────────
