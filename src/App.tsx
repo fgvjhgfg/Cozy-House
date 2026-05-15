@@ -27,8 +27,8 @@ const HUD = () => {
   return (
     <>
       <div className="hud">
-        <h2>Объятия: {hugs.length} / 3</h2>
-        {isOpen ? <p style={{color:'#88ff88'}}>🚪 Дверь открыта! Кликни по ней.</p> : <p>Найди 3 разных позы, чтобы открыть дверь.</p>}
+        <h2>Объятия: {hugs.length} / 4</h2>
+        {isOpen ? <p style={{color:'#88ff88'}}>🚪 Дверь открыта!</p> : <p>Найди 4 разных позы объятий.</p>}
       </div>
       {promptText && (
         <div className="interaction-prompt">

@@ -637,10 +637,30 @@ const CharacterBody = ({
 
 // ── Interactions ──────────────────────────────────────────────────────────────
 const Room2Interactions = () => {
-  const { setPromptText } = useStore();
+  const { setPromptText, addHug } = useStore();
   useTransition();
   // Cache last prompt to avoid calling setPromptText every frame (60fps → Zustand mutations → remount loop)
   const lastPrompt = useRef('');
+
+  // Helper: activate a pose only if BOTH characters are in its zone
+  function tryActivatePose(poseIdx: number) {
+    const player = (window as any).playerPos as { x: number; z: number } | undefined;
+    const npc    = (window as any).npcPos    as { x: number; z: number } | undefined;
+    if (!player || !npc) return false;
+    const playerInZone = detectPoseZone(player.x, player.z) === poseIdx;
+    const npcInZone    = detectPoseZone(npc.x,    npc.z)    === poseIdx;
+    if (!playerInZone || !npcInZone) {
+      console.log(`[E] pose${poseIdx}: player=${playerInZone} npc=${npcInZone} — need both in zone`);
+      return false;
+    }
+    leadState.active     = false;
+    poseState.activePose = poseIdx;
+    poseState.poseIdx    = poseIdx;
+    // Register unique hug discovery
+    addHug('Room2Scene', `pose${poseIdx}`);
+    console.log('[E] activate pose', poseIdx, '(both in zone)');
+    return true;
+  }
 
   useFrame(() => {
     const p = (window as any).playerPos;
@@ -651,18 +671,20 @@ const Room2Interactions = () => {
     (window as any).activeZone   = nearDoor ? 'door' : '';
     (window as any).r2ActiveZone = nearDoor ? 'door' : '';
 
-    // Detect which pose zone the player is currently in (or null)
+    // Detect which pose zone the PLAYER is currently in (or null)
     const nearPose = poseState.activePose === null ? detectPoseZone(p.x, p.z) : null;
+    // Also check if NPC is in the same zone (needed for dual-character check hint)
+    const npc = (window as any).npcPos as { x: number; z: number } | undefined;
+    const npcNearPose = nearPose !== null && npc ? detectPoseZone(npc.x, npc.z) === nearPose : false;
     (window as any).r2NearPoseZone = nearPose;
 
     // Only call setPromptText when text changes (prevents 60fps Zustand mutations)
     let newPrompt = '';
-    if (poseState.activePose !== null)  newPrompt = '[E] выйти из объятий   ·   [F] отпустить руку';
-    else if (leadState.active && nearDoor) newPrompt = '[H] перейти в третью комнату   ·   [F] отпустить руку';
-    else if (leadState.active)          newPrompt = '[F] отпустить руку';
-    else if (nearDoor)                  newPrompt = '[H] перейти в третью комнату   ·   [F] вести за руку';
-    else if (nearPose !== null)         newPrompt = `[E] обняться (поза ${nearPose})   ·   [F] вести за руку`;
-    else                                newPrompt = '[F] вести за руку';
+    if (poseState.activePose !== null)       newPrompt = '[E] выйти из объятий   ·   [F] отпустить руку';
+    else if (leadState.active)               newPrompt = '[F] отпустить руку';
+    else if (nearPose !== null && npcNearPose) newPrompt = `[E] обняться (поза ${nearPose})   ·   [F] вести за руку`;
+    else if (nearPose !== null)              newPrompt = 'Подведи сюда второго персонажа   ·   [F] вести за руку';
+    else                                     newPrompt = '[F] вести за руку';
     if (newPrompt !== lastPrompt.current) {
       lastPrompt.current = newPrompt;
       setPromptText(newPrompt);
@@ -671,16 +693,11 @@ const Room2Interactions = () => {
     if ((window as any).r2PoseBtn) {
       (window as any).r2PoseBtn = false;
       if (poseState.activePose !== null) {
-        // Exit current pose
         poseState.activePose = null;
         poseState.poseIdx    = 0;
       } else {
         const zone = detectPoseZone(p.x, p.z);
-        if (zone !== null) {
-          leadState.active     = false;
-          poseState.activePose = zone;
-          poseState.poseIdx    = zone;
-        }
+        if (zone !== null) tryActivatePose(zone);
       }
     }
     if ((window as any).r2LeadBtn) {
@@ -709,17 +726,11 @@ const Room2Interactions = () => {
         poseState.poseIdx    = 0;
         console.log('[E] exit pose');
       } else {
-        // E while free → activate pose for current zone (if any)
-        const p = (window as any).playerPos;
-        const zone = p ? detectPoseZone(p.x, p.z) : null;
-        if (zone !== null) {
-          leadState.active     = false;
-          poseState.activePose = zone;
-          poseState.poseIdx    = zone;
-          console.log('[E] activate pose', zone);
-        } else {
-          console.log('[E] not in any pose zone — ignored');
-        }
+        // E while free → activate pose for current zone only if BOTH characters are in it
+        const pp = (window as any).playerPos;
+        const zone = pp ? detectPoseZone(pp.x, pp.z) : null;
+        if (zone !== null) tryActivatePose(zone);
+        else console.log('[E] not in any pose zone — ignored');
       }
     };
     // H — переход в Room 3 у двери

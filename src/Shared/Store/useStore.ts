@@ -36,17 +36,16 @@ export const useStore = create<GameState>()(
       
       addHug: (room, hugId) => set((state) => {
         const roomHugs = state.foundHugs[room] || [];
-        const zone = hugId.split('_')[0]; // e.g. 'standing', 'sofa', 'bed'
         
-        // Check if we already have a hug from this zone
-        const hasZone = roomHugs.some(id => id.split('_')[0] === zone);
+        // Check if we already have this exact pose (hugId = 'pose1', 'pose2', etc.)
+        const hasHug = roomHugs.includes(hugId);
         
-        if (!hasZone) {
+        if (!hasHug) {
           const newHugs = [...roomHugs, hugId];
           let newDoorState = { ...state.doorOpened };
           let newUnlockedRooms = [...state.unlockedRooms];
           
-          if (newHugs.length >= 3) {
+          if (newHugs.length >= 4) {
             newDoorState[room] = true;
             if (room === 'Room1Scene' && !newUnlockedRooms.includes('Room2Scene')) {
               newUnlockedRooms.push('Room2Scene');
