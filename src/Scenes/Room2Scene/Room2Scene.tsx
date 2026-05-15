@@ -363,8 +363,8 @@ const CharacterBody = ({
       const clip = adaptClip(walkRaw.clone(), clone, `${charKey}/walk`, false);
       const act  = mixer.clipAction(clip);
       act.setLoop(THREE.LoopRepeat, Infinity);
-      // Anny walk slower (0.55), Vell walk also slowed (0.6) to match movement speed
-      act.timeScale = charKey === 'anny' ? 0.55 : 0.6;
+      // Anny: 0.55, Vell: 0.45 (slowed to match higher movement speed of 2.5)
+      act.timeScale = charKey === 'anny' ? 0.55 : 0.45;
       walkAct.current = act;
       console.log(`[${charKey}] walk ready — ANIM[${allWalkAnims.length - 1}] "${walkRaw.name}" (${clip.tracks.length} tracks, timeScale=${act.timeScale})`);
     } else if (walkAnimUrl) {
@@ -541,7 +541,8 @@ const CharacterBody = ({
     }
 
     // ── PLAYER: movement ──────────────────────────────────────────────────────
-    const SPEED = 1.25;
+    // Vell is taller/faster — his walk anim covers more ground per cycle
+    const SPEED = charKey === 'vell' ? 2.5 : 1.25;
     const vel   = rb.current.linvel();
     let dx = 0, dz = 0;
     if (controls.current.forward)  dz -= SPEED;
