@@ -616,7 +616,7 @@ const Room2Interactions = () => {
     let newPrompt = '';
     if (poseState.activePose !== null)  newPrompt = '[E] выйти из позы   ·   [F] отпустить руку';
     else if (leadState.active)          newPrompt = '[F] отпустить руку   ·   [E] поза';
-    else if (zone === 'door')           newPrompt = '[E] перейти в третью комнату   ·   [F] вести за руку';
+    else if (zone === 'door')           newPrompt = '[H] перейти в третью комнату   ·   [F] вести за руку';
     else                                newPrompt = '[E] поза   ·   [F] вести за руку';
     if (newPrompt !== lastPrompt.current) {
       lastPrompt.current = newPrompt;
@@ -653,8 +653,7 @@ const Room2Interactions = () => {
         return;
       }
       if (e.key !== 'e' && e.key !== 'E' && e.code !== 'Space') return;
-      const zone = (window as any).activeZone ?? '';
-      if (zone === 'door') { useStore.getState().setCurrentRoom('Room3Scene'); return; }
+      // E cycles poses only — door transition uses H key
 
       // E: цикл поз null→1→2→3→4→null
       if (poseState.activePose === null) {
@@ -674,8 +673,18 @@ const Room2Interactions = () => {
       }
       console.log('[E] poseState.activePose =', poseState.activePose, '| lead=', leadState.active);
     };
+    // H — переход в Room 3 у двери
+    const onKeyH = (e: KeyboardEvent) => {
+      if (e.repeat) return;
+      if (e.key !== 'h' && e.key !== 'H') return;
+      if ((window as any).activeZone === 'door') useStore.getState().setCurrentRoom('Room3Scene');
+    };
     window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
+    window.addEventListener('keydown', onKeyH);
+    return () => {
+      window.removeEventListener('keydown', onKey);
+      window.removeEventListener('keydown', onKeyH);
+    };
   }, []);
 
   return null;
