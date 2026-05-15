@@ -43,11 +43,33 @@ const WALL_RADIUS = 4.5;
 const DOOR_RADIUS = 5.0;
 const ROOM_SCALE_TARGET = 12;
 
+// ── Pose activation zones (small areas around each interaction spot) ──────────
+// Centers = average of Anny + Vell pose spawn positions. Radius in world units.
+const POSE_ZONES: { poseIdx: number; centers: { x: number; z: number }[] }[] = [
+  { poseIdx: 1, centers: [{ x: 1.948, z: 3.471 }, { x: -0.507, z: 0.670 }] },
+  { poseIdx: 2, centers: [{ x: -1.506, z: -4.735 }, { x: -2.074, z: -3.654 }] },
+  { poseIdx: 3, centers: [{ x: 2.899, z: -1.049 }, { x: 5.697, z: 0.018 }] },
+  { poseIdx: 4, centers: [{ x: 2.821, z: 1.656 }, { x: 0.425, z: 3.193 }] },
+];
+const POSE_ZONE_RADIUS = 1.5;
+
+function detectPoseZone(px: number, pz: number): number | null {
+  for (const zone of POSE_ZONES) {
+    for (const c of zone.centers) {
+      if (Math.hypot(px - c.x, pz - c.z) < POSE_ZONE_RADIUS) return zone.poseIdx;
+    }
+  }
+  return null;
+}
+
 // ── Shared mutable state ──────────────────────────────────────────────────────
 const poseState   = { activePose: null as null | number, poseIdx: 0 };
 const leadState   = { active: false };
 const npcRbRef    = { current: null as null | RapierRigidBody };
 const npcGroupRef = { current: null as null | THREE.Group };
+// Pre-pose positions — saved on pose entry, restored on pose exit
+const poseRestore: { anny: { x: number; y: number; z: number } | null; vell: { x: number; y: number; z: number } | null } = { anny: null, vell: null };
+const pendingPoseRestore = { anny: false, vell: false };
 
 // ── Debug overlay (dev only) ──────────────────────────────────────────────────
 const DebugOverlay = () => {
@@ -209,11 +231,7 @@ const usePlayerControls = () => {
 // ── CharacterBody ─────────────────────────────────────────────────────────────
 type PoseSpawn = { pos: [number,number,number]; rotY: number } | null;
 
-// ── Initial spawn positions (used to reset after pose 4) ─────────────────────
-const ANNY_INITIAL_SPAWN: [number,number,number] = [0.751, 1, 0.977];
-const VELL_INITIAL_SPAWN: [number,number,number] = [-0.721, 3, 0.395];
-// Shared flag: when true, CharacterBody will teleport to initial spawn on next frame
-const pendingSpawnReset = { anny: false, vell: false };
+// (spawn reset now handled via poseRestore / pendingPoseRestore above)
 
 const CharacterBody = ({
   modelUrl, idleAnimUrl, walkAnimUrl, isPlayer, spawnPos, targetHeight,
@@ -466,6 +484,11 @@ const CharacterBody = ({
     // ── POSE MODE ──────────────────────────────────────────────────────────────
     if (ap !== null) {
       if (lastPose.current !== ap) {
+        // Save pre-pose position (only on first entry from null)
+        if (lastPose.current === null) {
+          poseRestore[charKey] = { x: t.x, y: t.y, z: t.z };
+          console.log(`[${charKey}] saved pre-pose pos`, poseRestore[charKey]);
+        }
         lastPose.current = ap;
         // Switch to kinematic so physics engine stops fighting our frozen position
         rb.current.setBodyType(2, true); // 2 = KinematicPositionBased
@@ -492,7 +515,6 @@ const CharacterBody = ({
 
     // ── EXIT POSE ──────────────────────────────────────────────────────────────
     if (lastPose.current !== null) {
-      const wasLastPose = lastPose.current === 4;
       poseActs.current.forEach(a => a?.fadeOut(0.2));
       lastPose.current  = null;
       frozenPos.current = null;
@@ -500,19 +522,19 @@ const CharacterBody = ({
       // Restore dynamic physics so character can move again
       rb.current.setBodyType(0, true); // 0 = Dynamic
       if (idleAct.current) { idleAct.current.reset().fadeIn(0.2).play(); }
-      // After pose 4: teleport back to initial Room 2 spawn
-      if (wasLastPose && pendingSpawnReset[charKey] !== undefined) {
-        pendingSpawnReset[charKey] = true;
-      }
+      // Schedule teleport back to pre-pose position
+      if (poseRestore[charKey]) pendingPoseRestore[charKey] = true;
     }
-    // Delayed spawn-reset (needs Dynamic body already restored)
-    if (pendingSpawnReset[charKey]) {
-      pendingSpawnReset[charKey] = false;
-      const spawn = charKey === 'anny' ? ANNY_INITIAL_SPAWN : VELL_INITIAL_SPAWN;
-      rb.current.setTranslation({ x: spawn[0], y: spawn[1], z: spawn[2] }, true);
-      rb.current.setLinvel({ x: 0, y: 0, z: 0 }, true);
-      if (group.current) group.current.rotation.y = 0;
-      console.log(`[${charKey}] reset to initial spawn`, spawn);
+    // Delayed restore (needs Dynamic body already active)
+    if (pendingPoseRestore[charKey]) {
+      pendingPoseRestore[charKey] = false;
+      const saved = poseRestore[charKey];
+      if (saved) {
+        rb.current.setTranslation(saved, true);
+        rb.current.setLinvel({ x: 0, y: 0, z: 0 }, true);
+        console.log(`[${charKey}] restored to pre-pose pos`, saved);
+        poseRestore[charKey] = null;
+      }
     }
 
     // ── NPC: переключение idle ↔ walk ─────────────────────────────────────────
@@ -624,23 +646,23 @@ const Room2Interactions = () => {
     const p = (window as any).playerPos;
     if (!p) return;
 
-    const dBed  = Math.hypot(p.x - BED_CENTER.x,  p.z - BED_CENTER.z);
-    const dWall = Math.hypot(p.x - WALL_CENTER.x, p.z - WALL_CENTER.z);
     const dDoor = Math.hypot(p.x - DOOR_CENTER.x, p.z - DOOR_CENTER.z);
+    const nearDoor = dDoor < DOOR_RADIUS;
+    (window as any).activeZone   = nearDoor ? 'door' : '';
+    (window as any).r2ActiveZone = nearDoor ? 'door' : '';
 
-    let zone = '';
-    if      (dBed  < BED_RADIUS)  zone = 'bed';
-    else if (dWall < WALL_RADIUS) zone = 'wall';
-    else if (dDoor < DOOR_RADIUS) zone = 'door';
-    (window as any).activeZone   = zone;
-    (window as any).r2ActiveZone = zone;
+    // Detect which pose zone the player is currently in (or null)
+    const nearPose = poseState.activePose === null ? detectPoseZone(p.x, p.z) : null;
+    (window as any).r2NearPoseZone = nearPose;
 
     // Only call setPromptText when text changes (prevents 60fps Zustand mutations)
     let newPrompt = '';
-    if (poseState.activePose !== null)  newPrompt = '[E] выйти из позы   ·   [F] отпустить руку';
-    else if (leadState.active)          newPrompt = '[F] отпустить руку   ·   [E] поза';
-    else if (zone === 'door')           newPrompt = '[H] перейти в третью комнату   ·   [F] вести за руку';
-    else                                newPrompt = '[E] поза   ·   [F] вести за руку';
+    if (poseState.activePose !== null)  newPrompt = '[E] выйти из объятий   ·   [F] отпустить руку';
+    else if (leadState.active && nearDoor) newPrompt = '[H] перейти в третью комнату   ·   [F] отпустить руку';
+    else if (leadState.active)          newPrompt = '[F] отпустить руку';
+    else if (nearDoor)                  newPrompt = '[H] перейти в третью комнату   ·   [F] вести за руку';
+    else if (nearPose !== null)         newPrompt = `[E] обняться (поза ${nearPose})   ·   [F] вести за руку`;
+    else                                newPrompt = '[F] вести за руку';
     if (newPrompt !== lastPrompt.current) {
       lastPrompt.current = newPrompt;
       setPromptText(newPrompt);
@@ -649,12 +671,16 @@ const Room2Interactions = () => {
     if ((window as any).r2PoseBtn) {
       (window as any).r2PoseBtn = false;
       if (poseState.activePose !== null) {
-        const next = poseState.activePose + 1;
-        poseState.activePose = next > 4 ? null : next;
+        // Exit current pose
+        poseState.activePose = null;
+        poseState.poseIdx    = 0;
       } else {
-        leadState.active     = false;
-        poseState.activePose = 1;
-        poseState.poseIdx    = 1;
+        const zone = detectPoseZone(p.x, p.z);
+        if (zone !== null) {
+          leadState.active     = false;
+          poseState.activePose = zone;
+          poseState.poseIdx    = zone;
+        }
       }
     }
     if ((window as any).r2LeadBtn) {
@@ -676,25 +702,25 @@ const Room2Interactions = () => {
         return;
       }
       if (e.key !== 'e' && e.key !== 'E' && e.code !== 'Space') return;
-      // E cycles poses only — door transition uses H key
 
-      // E: цикл поз null→1→2→3→4→null
-      if (poseState.activePose === null) {
-        // Войти в первую позу
-        leadState.active     = false;
-        poseState.activePose = 1;
-        poseState.poseIdx    = 1;
+      if (poseState.activePose !== null) {
+        // E while in pose → EXIT pose
+        poseState.activePose = null;
+        poseState.poseIdx    = 0;
+        console.log('[E] exit pose');
       } else {
-        // Перейти к следующей позе или выйти
-        const next = poseState.activePose + 1;
-        if (next > 4) {
-          poseState.activePose = null;
+        // E while free → activate pose for current zone (if any)
+        const p = (window as any).playerPos;
+        const zone = p ? detectPoseZone(p.x, p.z) : null;
+        if (zone !== null) {
+          leadState.active     = false;
+          poseState.activePose = zone;
+          poseState.poseIdx    = zone;
+          console.log('[E] activate pose', zone);
         } else {
-          poseState.activePose = next;
-          poseState.poseIdx    = next;
+          console.log('[E] not in any pose zone — ignored');
         }
       }
-      console.log('[E] poseState.activePose =', poseState.activePose, '| lead=', leadState.active);
     };
     // H — переход в Room 3 у двери
     const onKeyH = (e: KeyboardEvent) => {
