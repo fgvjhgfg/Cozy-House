@@ -48,7 +48,7 @@ const CharacterSelection = () => {
       <p>Выбери персонажа</p>
       <div>
         <button className="char-btn" onClick={() => setCharacter('Vell')}>Играть за Vell</button>
-        <button className="char-btn" onClick={() => setCharacter('Any')}>Играть за Any</button>
+        <button className="char-btn" onClick={() => setCharacter('Annie')}>Играть за Any</button>
       </div>
       
       {unlockedRooms.length > 1 && (
@@ -457,7 +457,7 @@ export const App = () => {
     const p = new URLSearchParams(window.location.search);
     if (p.get('r') === '2') {
       const s = useStore.getState();
-      const char = p.get('c') === 'Vell' ? 'Vell' : 'Any';
+      const char = p.get('c') === 'Vell' ? 'Vell' : 'Annie';
       s.setCharacter(char);
       s.unlockRoom('Room2Scene');
       s.setCurrentRoom('Room2Scene');
@@ -505,3 +505,4 @@ export const App = () => {
 };
 
 export default App;
+

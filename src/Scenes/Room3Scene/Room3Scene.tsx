@@ -267,7 +267,7 @@ const DoorTrigger = () => {
 // ─── Scene wrapper ────────────────────────────────────────────────────────────
 const Room3Content = () => {
   const { character } = useStore();
-  const isAnny = character === 'Any';
+  const isAnnie = character === 'Annie';
 
   return (
     <group>
@@ -286,19 +286,19 @@ const Room3Content = () => {
 
         <Suspense fallback={null}>
           <CharacterBody
-            modelUrl={isAnny ? ANNY_URL : VELL_URL}
-            walkUrl={isAnny ? ANNY_WALK_URL : VELL_WALK_URL}
+            modelUrl={isAnnie ? ANNY_URL : VELL_URL}
+            walkUrl={isAnnie ? ANNY_WALK_URL : VELL_WALK_URL}
             isPlayer
             spawnPos={[0, 2, 0]}
-            targetHeight={isAnny ? 1.6 : 1.8}
+            targetHeight={isAnnie ? 1.6 : 1.8}
             label="player"
           />
           <CharacterBody
-            modelUrl={isAnny ? VELL_URL : ANNY_URL}
-            walkUrl={isAnny ? VELL_WALK_URL : ANNY_WALK_URL}
+            modelUrl={isAnnie ? VELL_URL : ANNY_URL}
+            walkUrl={isAnnie ? VELL_WALK_URL : ANNY_WALK_URL}
             isPlayer={false}
             spawnPos={[1.5, 2, 0]}
-            targetHeight={isAnny ? 1.8 : 1.6}
+            targetHeight={isAnnie ? 1.8 : 1.6}
             label="npc"
           />
         </Suspense>
@@ -337,3 +337,4 @@ useGLTF.preload(ANNY_URL);
 useGLTF.preload(VELL_URL);
 useGLTF.preload(ANNY_WALK_URL);
 useGLTF.preload(VELL_WALK_URL);
+

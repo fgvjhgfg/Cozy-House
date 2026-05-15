@@ -67,7 +67,7 @@ export const ASSET_MANIFEST: AssetEntry[] = [
     priority: 'critical',
     size: 3_200_000,
     room: 'Room2Scene',
-    label: 'Anny (модель)',
+    label: 'Annie (модель)',
   },
   {
     url: `${A}/VellModel.glb`,
@@ -85,7 +85,7 @@ export const ASSET_MANIFEST: AssetEntry[] = [
     priority: 'high',
     size: 70_000,
     room: 'Room2Scene',
-    label: 'Anny idle',
+    label: 'Annie idle',
   },
   {
     url: `${A}/AnyWalk.glb`,
@@ -93,7 +93,7 @@ export const ASSET_MANIFEST: AssetEntry[] = [
     priority: 'high',
     size: 100_000,
     room: 'Room2Scene',
-    label: 'Anny walk',
+    label: 'Annie walk',
   },
   {
     url: `${A}/VellWalk.glb`,
@@ -222,3 +222,4 @@ export function getCategorySummary(): CategorySummary[] {
     };
   });
 }
+

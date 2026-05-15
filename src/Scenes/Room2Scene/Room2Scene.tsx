@@ -44,7 +44,7 @@ const DOOR_RADIUS = 5.0;
 const ROOM_SCALE_TARGET = 12;
 
 // ── Pose activation zones (small areas around each interaction spot) ──────────
-// Centers = average of Anny + Vell pose spawn positions. Radius in world units.
+// Centers = average of Annie + Vell pose spawn positions. Radius in world units.
 const POSE_ZONES: { poseIdx: number; centers: { x: number; z: number }[] }[] = [
   { poseIdx: 1, centers: [{ x: 1.948, z: 3.471 }, { x: -0.507, z: 0.670 }] },
   { poseIdx: 2, centers: [{ x: -1.506, z: -4.735 }, { x: -2.074, z: -3.654 }] },
@@ -68,8 +68,8 @@ const leadState   = { active: false };
 const npcRbRef    = { current: null as null | RapierRigidBody };
 const npcGroupRef = { current: null as null | THREE.Group };
 // Pre-pose positions — saved on pose entry, restored on pose exit
-const poseRestore: { anny: { x: number; y: number; z: number } | null; vell: { x: number; y: number; z: number } | null } = { anny: null, vell: null };
-const pendingPoseRestore = { anny: false, vell: false };
+const poseRestore: { annie: { x: number; y: number; z: number } | null; vell: { x: number; y: number; z: number } | null } = { annie: null, vell: null };
+const pendingPoseRestore = { annie: false, vell: false };
 
 // ── Debug overlay (dev only) ──────────────────────────────────────────────────
 const DebugOverlay = () => {
@@ -143,7 +143,7 @@ function adaptClip(
     // The walk anim was recorded for an upright model; applying its root rotation
     // to Vell's -π/2 rotated skeleton causes him to flip horizontal.
     if (stripRootAll && isRoot) return;
-    // For normal models (Anny walk): only strip root-motion positions
+    // For normal models (Annie walk): only strip root-motion positions
     if (!stripRootAll && isRoot && isPos) return;
     const real = boneMap.get(normBone(bone));
     if (real) { const c = t.clone(); c.name = real + prop; tracks.push(c); }
@@ -246,7 +246,7 @@ const CharacterBody = ({
   targetHeight: number;
   colliderArgs: [number,number];
   colliderOffset: [number,number,number];
-  charKey: 'anny' | 'vell';
+  charKey: 'annie' | 'vell';
   poseUrls: [string,string,string,string];
   modelRotationX?: number;
   visualOffsetY?: number;
@@ -280,7 +280,7 @@ const CharacterBody = ({
   const isWalking = useRef(false);
   // Stores T-pose position AND quaternion of root bones (before any animation plays).
   // resetToTpose() XZ position → prevents root-motion drift
-  // resetToTpose() Y position  → keeps native Y offset (prevents Anny sinking / Vell floating)
+  // resetToTpose() Y position  → keeps native Y offset (prevents Annie sinking / Vell floating)
   // resetToTpose() quaternion  → (Vell walk only) prevents Mixamo hips 90° flip
   const rootBoneTpose = useRef<Map<string, { pos: THREE.Vector3; quat: THREE.Quaternion }>>(new Map());
 
@@ -316,7 +316,7 @@ const CharacterBody = ({
     // So world_y = native_z → lowest world point = sb.min.z.
     // wrapperFloorY lifts rotWrapper so that sb.min.z aligns with group Y=0.
     const wrapperFloorY = modelRotationX ? -sb.min.z + visualOffsetY : 0;
-    // Anny: lift clone so native min.y = 0, plus visualOffsetY
+    // Annie: lift clone so native min.y = 0, plus visualOffsetY
     const floorY = modelRotationX ? 0 : -sb.min.y + visualOffsetY;
     if (!modelRotationX) c.position.y = floorY;
     console.log(`[${charKey}] wrapperFloorY=${wrapperFloorY.toFixed(3)} floorY=${floorY.toFixed(3)} visualOffsetY=${visualOffsetY}`);
@@ -381,8 +381,8 @@ const CharacterBody = ({
       const clip = adaptClip(walkRaw.clone(), clone, `${charKey}/walk`, false);
       const act  = mixer.clipAction(clip);
       act.setLoop(THREE.LoopRepeat, Infinity);
-      // Anny: 0.55, Vell: 0.45 (slowed to match higher movement speed of 2.5)
-      act.timeScale = charKey === 'anny' ? 0.55 : 0.45;
+      // Annie: 0.55, Vell: 0.45 (slowed to match higher movement speed of 2.5)
+      act.timeScale = charKey === 'annie' ? 0.55 : 0.45;
       walkAct.current = act;
       console.log(`[${charKey}] walk ready — ANIM[${allWalkAnims.length - 1}] "${walkRaw.name}" (${clip.tracks.length} tracks, timeScale=${act.timeScale})`);
     } else if (walkAnimUrl) {
@@ -445,7 +445,7 @@ const CharacterBody = ({
     // Lock clone position to prevent root-motion drift.
     // clone has NO rotation (rotation lives in rotWrapper group in JSX).
     // For Vell (modelRotationX): offset is along native Z axis.
-    // For Anny (no rotation): offset is along Y axis.
+    // For Annie (no rotation): offset is along Y axis.
     if (clone) {
       clone.position.set(0, floorY + visualOffsetY, 0);
       const inPose = poseState.activePose !== null;
@@ -460,7 +460,7 @@ const CharacterBody = ({
             bone.position.set(0, 0, 0);
             if (!inPose && tp) bone.quaternion.copy(tp.quat);
           } else {
-            // Anny: zero root bone position.
+            // Annie: zero root bone position.
             bone.position.set(0, 0, 0);
           }
         }
@@ -793,7 +793,7 @@ const Pose1Box = () => {
     groupRef.current.visible = (poseState.activePose === 1);
     (window as any).__debugBoxGroup = groupRef.current;
   });
-  // Midpoint between Anny [1.948, -0.968, 3.471] and Vell [-0.507, 0.149, 0.670]
+  // Midpoint between Annie [1.948, -0.968, 3.471] and Vell [-0.507, 0.149, 0.670]
   return (
     <group ref={groupRef} visible={false} position={[0.024, -0.088, 2.044]} scale={2.2}>
       <mesh castShadow receiveShadow>
@@ -884,14 +884,14 @@ export const Room2Scene = () => {
               <meshStandardMaterial color="#ff66b3" emissive="#ff66b3" emissiveIntensity={0.5} wireframe />
             </mesh>
           }>
-            {/* Anny: idle (AnyIdle) + walk (AnyWalk) */}
+            {/* Annie: idle (AnyIdle) + walk (AnyWalk) */}
             <CharacterBody
               modelUrl={ANNY_URL}
               idleAnimUrl={ANNY_IDLE_URL}
               walkAnimUrl={ANNY_WALK_URL}
-              charKey="anny"
+              charKey="annie"
               poseUrls={ANNY_POSE_URLS}
-              isPlayer={character === 'Any'}
+              isPlayer={character === 'Annie'}
               spawnPos={[0.751, 1, 0.977]}
               targetHeight={0.8}
               colliderArgs={[0.12, 0.35]}
@@ -939,3 +939,4 @@ export const Room2Scene = () => {
     </group>
   );
 };
+
