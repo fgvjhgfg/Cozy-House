@@ -804,14 +804,15 @@ export const Room2Scene = () => {
               charKey="anny"
               poseUrls={ANNY_POSE_URLS}
               isPlayer={character === 'Any'}
-              spawnPos={[2.073, -0.857, 3.410]}
+              spawnPos={[0.751, 1, 0.977]}
               targetHeight={0.8}
               colliderArgs={[0.12, 0.35]}
               colliderOffset={[0, 0.47, 0]}
               visualOffsetY={0.72}
               poseSpawns={[
                 { pos: [1.948, -0.968, 3.471], rotY: THREE.MathUtils.degToRad(-140.260) }, // Pose 1: объятия
-                null, null, null,
+                { pos: [-1.506, -0.048, -4.735], rotY: THREE.MathUtils.degToRad(-60.046) }, // Pose 2
+                null, null,
               ]}
             />
             {/* Vell: без idle (стоит без анимации), walk только когда его ведут */}
@@ -821,15 +822,16 @@ export const Room2Scene = () => {
               charKey="vell"
               poseUrls={VELL_POSE_URLS}
               isPlayer={character === 'Vell'}
-              spawnPos={[0.5, 3, 0]}
-              targetHeight={4.0}
+              spawnPos={[-0.721, 3, 0.395]}
+              targetHeight={4.2}
               colliderArgs={[0.13, 0.38]}
               colliderOffset={[0, 0.36, 0]}
               visualOffsetY={-0.5}
               modelRotationX={-Math.PI / 2}
               poseSpawns={[
                 { pos: [-0.507, 0.149, 0.670], rotY: THREE.MathUtils.degToRad(41.253) }, // Pose 1: объятия
-                null, null, null,
+                { pos: [-2.074, 0.149, -3.654], rotY: THREE.MathUtils.degToRad(152.636) }, // Pose 2: объятия
+                null, null,
               ]}
             />
           </Suspense>

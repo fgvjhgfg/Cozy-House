@@ -65,6 +65,13 @@ export const DebugCharPoser = () => {
         <button id="__dpN" style="flex:1;background:#333;color:#aaa;border:none;padding:5px;border-radius:5px;cursor:pointer;font:11px monospace">🤝 NPC</button>
       </div>
       <div id="__dpCoords" style="margin-bottom:10px;line-height:2;font-size:11px">—</div>
+      <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px">
+        <span style="color:#aaa;font-size:11px">📏 Масштаб:</span>
+        <button id="__dpScM" style="background:#333;color:#fff;border:1px solid #555;padding:3px 10px;border-radius:4px;cursor:pointer;font:13px monospace">−</button>
+        <span id="__dpScV" style="color:#0ff;font-size:11px;min-width:44px;text-align:center">×1.00</span>
+        <button id="__dpScP" style="background:#333;color:#fff;border:1px solid #555;padding:3px 10px;border-radius:4px;cursor:pointer;font:13px monospace">+</button>
+        <button id="__dpScR" style="background:#333;color:#aaa;border:1px solid #555;padding:3px 7px;border-radius:4px;cursor:pointer;font:10px monospace">reset</button>
+      </div>
       <button id="__dpDrag" style="width:100%;background:#1a1a1a;color:#aaa;border:1px solid #555;padding:6px;border-radius:5px;cursor:pointer;font:12px monospace;margin-bottom:6px">
         🖱 DRAG: <span id="__dpDS">OFF</span>
       </button>
@@ -78,6 +85,7 @@ export const DebugCharPoser = () => {
       <div style="color:#555;font-size:10px;line-height:1.8;margin-bottom:10px">
         <b style="color:#888">Move:</b> Drag=XZ &nbsp; Shift+Drag=Y<br>
         <b style="color:#888">Rotate:</b> Alt+X/Y/Z → ось → тащи мышью<br>
+        <b style="color:#888">Scale:</b> кнопки ±0.05 &nbsp; Shift+колёсико<br>
         Tab = Player ↔ NPC
       </div>
       <button id="__dpCopy" style="width:100%;background:#111;color:#0f0;border:1px solid #0f0;padding:5px;border-radius:5px;cursor:pointer;font:11px monospace">📋 Скопировать координаты</button>
@@ -148,6 +156,26 @@ export const DebugCharPoser = () => {
     axBtns['z'].addEventListener('click', () => setRotAxis(rotAxis.current === 'z' ? null : 'z'));
     axBtns[''].addEventListener('click',  () => setRotAxis(null));
 
+    // ── Scale helpers ──────────────────────────────────────────────────────────
+    const updateScaleDisplay = () => {
+      const g = getCharGroup();
+      const sv = document.getElementById('__dpScV');
+      if (sv) sv.textContent = `×${(g?.scale.x ?? 1).toFixed(2)}`;
+    };
+    const changeCharScale = (delta: number) => {
+      const g = getCharGroup();
+      if (!g) return;
+      const next = Math.max(0.1, Math.min(10, g.scale.x + delta));
+      g.scale.setScalar(next);
+      updateScaleDisplay();
+    };
+    document.getElementById('__dpScM')!.addEventListener('click', () => changeCharScale(-0.05));
+    document.getElementById('__dpScP')!.addEventListener('click', () => changeCharScale(+0.05));
+    document.getElementById('__dpScR')!.addEventListener('click', () => {
+      const g = getCharGroup(); if (!g) return;
+      g.scale.setScalar(1); updateScaleDisplay();
+    });
+
     document.getElementById('__dpCopy')!.addEventListener('click', () => {
       const pRb = (window as any).__debugPlayerRb;
       const nRb = (window as any).__debugNpcRb;
@@ -185,8 +213,23 @@ export const DebugCharPoser = () => {
       }
     };
     window.addEventListener('keydown', onKey);
+
+    // ── Shift+Wheel = scale ───────────────────────────────────────────────────
+    const onWheel = (e: WheelEvent) => {
+      if (!e.shiftKey) return;
+      e.preventDefault(); e.stopPropagation();
+      const g = getCharGroup(); if (!g) return;
+      const delta = e.deltaY > 0 ? -0.05 : 0.05;
+      const next  = Math.max(0.1, Math.min(10, g.scale.x + delta));
+      g.scale.setScalar(next);
+      const sv = document.getElementById('__dpScV');
+      if (sv) sv.textContent = `×${next.toFixed(2)}`;
+    };
+    gl.domElement.addEventListener('wheel', onWheel, { passive: false });
+
     return () => {
       window.removeEventListener('keydown', onKey);
+      gl.domElement.removeEventListener('wheel', onWheel);
       panel.remove();
       gl.domElement.style.cursor = '';
     };
@@ -299,6 +342,13 @@ export const DebugCharPoser = () => {
       const c = active ? '#ff9955' : '#444';
       return `<span style="color:${c}"> ${R2D(r.x).toFixed(1)}° ${R2D(r.y).toFixed(1)}° ${R2D(r.z).toFixed(1)}°</span>`;
     };
+
+    // Sync scale display
+    const sv = document.getElementById('__dpScV');
+    const cg = sel === 'player'
+      ? (window as any).__debugPlayerGroup as THREE.Group | undefined
+      : (window as any).__debugNpcGroup   as THREE.Group | undefined;
+    if (sv && cg) sv.textContent = `×${cg.scale.x.toFixed(2)}`;
 
     el.innerHTML = `
       <div>👤 ${fPos(p, sel==='player')}${fRot(pr, sel==='player')}</div>
