@@ -44,22 +44,30 @@ const DOOR_RADIUS = 5.0;
 const ROOM_SCALE_TARGET = 12;
 
 // ── Pose activation zones (small areas around each interaction spot) ──────────
-// Centers = average of Annie + Vell pose spawn positions. Radius in world units.
-const POSE_ZONES: { poseIdx: number; centers: { x: number; z: number }[] }[] = [
-  { poseIdx: 1, centers: [{ x: 1.948, z: 3.471 }, { x: -0.507, z: 0.670 }] },
-  { poseIdx: 2, centers: [{ x: -1.506, z: -4.735 }, { x: -2.074, z: -3.654 }] },
-  { poseIdx: 3, centers: [{ x: 2.899, z: -1.049 }, { x: 5.697, z: 0.018 }] },
-  { poseIdx: 4, centers: [{ x: 2.821, z: 1.656 }, { x: 0.425, z: 3.193 }] },
+// Centers = Annie + Vell pose spawn positions. Each zone has its own radius.
+const POSE_ZONES: { poseIdx: number; radius: number; centers: { x: number; z: number }[] }[] = [
+  { poseIdx: 1, radius: 1.5, centers: [{ x: 1.948, z: 3.471 }, { x: -0.507, z: 0.670 }] },
+  { poseIdx: 2, radius: 2.0, centers: [{ x: -1.506, z: -4.735 }, { x: -2.074, z: -3.654 }] },
+  { poseIdx: 3, radius: 2.0, centers: [{ x: 2.899, z: -1.049 }, { x: 5.697, z: 0.018 }] },
+  // Pose 4: expanded radius — overlaps pose 1 area, nearest-center detection resolves priority
+  { poseIdx: 4, radius: 2.5, centers: [{ x: 2.821, z: 1.656 }, { x: 0.425, z: 3.193 }] },
 ];
-const POSE_ZONE_RADIUS = 1.5;
 
+// Returns the poseIdx of the NEAREST zone center that is within its zone's radius.
+// "Nearest" wins, so pose 1 and pose 4 won't conflict even when their radii overlap.
 function detectPoseZone(px: number, pz: number): number | null {
+  let bestPose: number | null = null;
+  let bestDist = Infinity;
   for (const zone of POSE_ZONES) {
     for (const c of zone.centers) {
-      if (Math.hypot(px - c.x, pz - c.z) < POSE_ZONE_RADIUS) return zone.poseIdx;
+      const d = Math.hypot(px - c.x, pz - c.z);
+      if (d < zone.radius && d < bestDist) {
+        bestDist = d;
+        bestPose = zone.poseIdx;
+      }
     }
   }
-  return null;
+  return bestPose;
 }
 
 // ── Shared mutable state ──────────────────────────────────────────────────────
