@@ -10,7 +10,7 @@ import { useThree, useFrame } from '@react-three/fiber';
 import * as THREE from 'three';
 
 const R2D = THREE.MathUtils.radToDeg;
-type SelMode = 'player' | 'npc';
+type SelMode = 'player' | 'npc' | 'box2';
 type RotAxis = 'x' | 'y' | 'z' | null;
 
 export const DebugCharPoser = () => {
@@ -39,6 +39,9 @@ export const DebugCharPoser = () => {
     ? (window as any).__debugPlayerGroup ?? null
     : (window as any).__debugNpcGroup ?? null;
 
+  const getBox2 = (): THREE.Group | null =>
+    (window as any).__debugBox2Group ?? null;
+
   const updateFrozen = (pos: { x: number; y: number; z: number }) => {
     const ref = selected.current === 'player'
       ? (window as any).__debugPlayerFrozenPos
@@ -63,6 +66,7 @@ export const DebugCharPoser = () => {
       <div style="display:flex;gap:5px;margin-bottom:10px">
         <button id="__dpP" style="flex:1;background:#ff6600;color:#fff;border:none;padding:5px;border-radius:5px;cursor:pointer;font:11px monospace">👤 Player</button>
         <button id="__dpN" style="flex:1;background:#333;color:#aaa;border:none;padding:5px;border-radius:5px;cursor:pointer;font:11px monospace">🤝 NPC</button>
+        <button id="__dpB2" style="flex:1;background:#333;color:#aaa;border:none;padding:5px;border-radius:5px;cursor:pointer;font:11px monospace">📦 Box2</button>
       </div>
       <div id="__dpCoords" style="margin-bottom:10px;line-height:2;font-size:11px">—</div>
       <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px">
@@ -71,6 +75,27 @@ export const DebugCharPoser = () => {
         <span id="__dpScV" style="color:#0ff;font-size:11px;min-width:44px;text-align:center">×1.00</span>
         <button id="__dpScP" style="background:#333;color:#fff;border:1px solid #555;padding:3px 10px;border-radius:4px;cursor:pointer;font:13px monospace">+</button>
         <button id="__dpScR" style="background:#333;color:#aaa;border:1px solid #555;padding:3px 7px;border-radius:4px;cursor:pointer;font:10px monospace">reset</button>
+      </div>
+      <div id="__dpB2Panel" style="display:none;margin-bottom:8px;border:1px solid #555;padding:8px;border-radius:5px">
+        <div style="color:#aaa;font-size:10px;margin-bottom:6px">📦 Box2 размер (W/H/D):</div>
+        <div style="display:flex;align-items:center;gap:4px;margin-bottom:4px">
+          <span style="color:#888;font-size:10px;width:28px">W X</span>
+          <button id="__b2XM" style="background:#333;color:#fff;border:1px solid #555;padding:2px 8px;border-radius:3px;cursor:pointer;font:12px monospace">−</button>
+          <span id="__b2XV" style="min-width:36px;text-align:center;color:#0ff;font-size:11px">1.00</span>
+          <button id="__b2XP" style="background:#333;color:#fff;border:1px solid #555;padding:2px 8px;border-radius:3px;cursor:pointer;font:12px monospace">+</button>
+        </div>
+        <div style="display:flex;align-items:center;gap:4px;margin-bottom:4px">
+          <span style="color:#888;font-size:10px;width:28px">H Y</span>
+          <button id="__b2YM" style="background:#333;color:#fff;border:1px solid #555;padding:2px 8px;border-radius:3px;cursor:pointer;font:12px monospace">−</button>
+          <span id="__b2YV" style="min-width:36px;text-align:center;color:#0ff;font-size:11px">1.00</span>
+          <button id="__b2YP" style="background:#333;color:#fff;border:1px solid #555;padding:2px 8px;border-radius:3px;cursor:pointer;font:12px monospace">+</button>
+        </div>
+        <div style="display:flex;align-items:center;gap:4px">
+          <span style="color:#888;font-size:10px;width:28px">D Z</span>
+          <button id="__b2ZM" style="background:#333;color:#fff;border:1px solid #555;padding:2px 8px;border-radius:3px;cursor:pointer;font:12px monospace">−</button>
+          <span id="__b2ZV" style="min-width:36px;text-align:center;color:#0ff;font-size:11px">1.00</span>
+          <button id="__b2ZP" style="background:#333;color:#fff;border:1px solid #555;padding:2px 8px;border-radius:3px;cursor:pointer;font:12px monospace">+</button>
+        </div>
       </div>
       <button id="__dpDrag" style="width:100%;background:#1a1a1a;color:#aaa;border:1px solid #555;padding:6px;border-radius:5px;cursor:pointer;font:12px monospace;margin-bottom:6px">
         🖱 DRAG: <span id="__dpDS">OFF</span>
@@ -95,6 +120,7 @@ export const DebugCharPoser = () => {
     const btns: Record<SelMode, HTMLButtonElement> = {
       player: document.getElementById('__dpP') as HTMLButtonElement,
       npc:    document.getElementById('__dpN') as HTMLButtonElement,
+      box2:   document.getElementById('__dpB2') as HTMLButtonElement,
     };
     const rotRow = document.getElementById('__dpRotRow')!;
     const axBtns: Record<string, HTMLButtonElement> = {
@@ -125,6 +151,8 @@ export const DebugCharPoser = () => {
         btns[k].style.background = k === key ? '#ff6600' : '#333';
         btns[k].style.color      = k === key ? '#fff'    : '#aaa';
       });
+      const b2p = document.getElementById('__dpB2Panel')!;
+      b2p.style.display = key === 'box2' ? 'block' : 'none';
     };
 
     const toggleDrag = () => {
@@ -149,12 +177,28 @@ export const DebugCharPoser = () => {
 
     btns.player.addEventListener('click', () => setSelected('player'));
     btns.npc.addEventListener('click',    () => setSelected('npc'));
+    btns.box2.addEventListener('click',   () => setSelected('box2'));
     document.getElementById('__dpDrag')!.addEventListener('click', toggleDrag);
 
     axBtns['x'].addEventListener('click', () => setRotAxis(rotAxis.current === 'x' ? null : 'x'));
     axBtns['y'].addEventListener('click', () => setRotAxis(rotAxis.current === 'y' ? null : 'y'));
     axBtns['z'].addEventListener('click', () => setRotAxis(rotAxis.current === 'z' ? null : 'z'));
     axBtns[''].addEventListener('click',  () => setRotAxis(null));
+
+    // ── Box2 scale buttons ──
+    const b2Scale = (axis: 'x'|'y'|'z', delta: number) => {
+      const b = getBox2(); if (!b) return;
+      const next = Math.max(0.05, (b.scale[axis] as number) + delta);
+      b.scale[axis] = next;
+      const el = document.getElementById(`__b2${axis.toUpperCase()}V`);
+      if (el) el.textContent = next.toFixed(2);
+    };
+    document.getElementById('__b2XM')!.addEventListener('click', () => b2Scale('x', -0.05));
+    document.getElementById('__b2XP')!.addEventListener('click', () => b2Scale('x', +0.05));
+    document.getElementById('__b2YM')!.addEventListener('click', () => b2Scale('y', -0.05));
+    document.getElementById('__b2YP')!.addEventListener('click', () => b2Scale('y', +0.05));
+    document.getElementById('__b2ZM')!.addEventListener('click', () => b2Scale('z', -0.05));
+    document.getElementById('__b2ZP')!.addEventListener('click', () => b2Scale('z', +0.05));
 
     // ── Scale helpers ──────────────────────────────────────────────────────────
     const updateScaleDisplay = () => {
@@ -251,6 +295,26 @@ export const DebugCharPoser = () => {
       if (!dragMode.current) return;
       e.stopPropagation();
       if (e.button !== 0) return;
+
+      // ── Box2 drag (no rigidbody — move group directly)
+      if (selected.current === 'box2') {
+        const box = getBox2(); if (!box) return;
+        dragging.current    = true;
+        startMouseX.current = e.clientX;
+        startMouseY.current = e.clientY;
+        startPos.current    = { x: box.position.x, y: box.position.y, z: box.position.z };
+        startCharY.current  = box.position.y;
+        startRotX.current   = box.rotation.x;
+        startRotY.current   = box.rotation.y;
+        startRotZ.current   = box.rotation.z;
+        dragPlane.current.set(new THREE.Vector3(0, 1, 0), -box.position.y);
+        rc.current.setFromCamera(getMouseNDC(e), camera);
+        const hit = rc.current.ray.intersectPlane(dragPlane.current, startHit.current);
+        if (!hit) startHit.current.set(box.position.x, box.position.y, box.position.z);
+        (e.target as Element).setPointerCapture(e.pointerId);
+        return;
+      }
+
       const rb = getRb();
       if (!rb) return;
       dragging.current   = true;
@@ -276,11 +340,30 @@ export const DebugCharPoser = () => {
       const dy      = e.clientY - startMouseY.current;
       const isShift = e.shiftKey;
       const axis    = rotAxis.current;
-      const rb      = getRb();
-      const group   = getCharGroup();
+
+      // ── Box2 move
+      if (selected.current === 'box2') {
+        const box = getBox2(); if (!box) return;
+        if (axis === 'x')      { box.rotation.x = startRotX.current + dy * 0.008; }
+        else if (axis === 'y') { box.rotation.y = startRotY.current + dx * 0.008; }
+        else if (axis === 'z') { box.rotation.z = startRotZ.current + dx * 0.008; }
+        else if (isShift) {
+          box.position.y = startCharY.current - dy * 0.008;
+        } else {
+          rc.current.setFromCamera(getMouseNDC(e), camera);
+          const hit = new THREE.Vector3();
+          if (rc.current.ray.intersectPlane(dragPlane.current, hit)) {
+            box.position.x = startPos.current.x + (hit.x - startHit.current.x);
+            box.position.z = startPos.current.z + (hit.z - startHit.current.z);
+          }
+        }
+        return;
+      }
+
+      const rb    = getRb();
+      const group = getCharGroup();
       if (!rb) return;
       const t = rb.translation();
-
       if (axis === 'x')      { if (group) group.rotation.x = startRotX.current + dy * 0.008; }
       else if (axis === 'y') { if (group) group.rotation.y = startRotY.current + dx * 0.008; }
       else if (axis === 'z') { if (group) group.rotation.z = startRotZ.current + dx * 0.008; }
@@ -348,11 +431,26 @@ export const DebugCharPoser = () => {
     const cg = sel === 'player'
       ? (window as any).__debugPlayerGroup as THREE.Group | undefined
       : (window as any).__debugNpcGroup   as THREE.Group | undefined;
-    if (sv && cg) sv.textContent = `×${cg.scale.x.toFixed(2)}`;
+    if (sv && cg && sel !== 'box2') sv.textContent = `×${cg.scale.x.toFixed(2)}`;
+
+    // Sync box2 scale display
+    const b2 = getBox2();
+    if (b2) {
+      const xv = document.getElementById('__b2XV'); if (xv) xv.textContent = b2.scale.x.toFixed(2);
+      const yv = document.getElementById('__b2YV'); if (yv) yv.textContent = b2.scale.y.toFixed(2);
+      const zv = document.getElementById('__b2ZV'); if (zv) zv.textContent = b2.scale.z.toFixed(2);
+    }
+
+    // Box2 coords display
+    const f3 = (v: number) => v.toFixed(3);
+    const b2Line = b2
+      ? `<div>📦 <span style="color:${sel==='box2'?'#ffcc00':'#666'}">pos [${f3(b2.position.x)}, ${f3(b2.position.y)}, ${f3(b2.position.z)}]  scale [${b2.scale.x.toFixed(2)}, ${b2.scale.y.toFixed(2)}, ${b2.scale.z.toFixed(2)}]</span></div>`
+      : '';
 
     el.innerHTML = `
       <div>👤 ${fPos(p, sel==='player')}${fRot(pr, sel==='player')}</div>
       <div>🤝 ${fPos(n, sel==='npc')}${fRot(nr, sel==='npc')}</div>
+      ${b2Line}
     `;
   });
 

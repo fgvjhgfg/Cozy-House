@@ -6,7 +6,7 @@ import * as THREE from 'three';
 import { useFrame } from '@react-three/fiber';
 import { Physics, RigidBody, RapierRigidBody, CapsuleCollider, CuboidCollider } from '@react-three/rapier';
 import { SkeletonUtils } from 'three/examples/jsm/Addons.js';
-// import { DebugCharPoser } from '../../_DEBUG_CharPoser'; // DEBUG_CHAR_POSER (раскомментировать чтобы включить)
+import { DebugCharPoser } from '../../_DEBUG_CharPoser'; // DEBUG_CHAR_POSER (раскомментировать чтобы включить)
 
 // ── URLs ──────────────────────────────────────────────────────────────────────
 // 3-stage compression: Meshopt geometry + 2048×2048 resize + WebP/KTX2 textures = −86% vs original
@@ -744,6 +744,25 @@ const Pose1Box = () => {
   );
 };
 
+// ── Pose 4 Box (visible only during pose 4) ─────────────────────────────────────
+const Pose4Box = () => {
+  const groupRef = useRef<THREE.Group>(null);
+  useFrame(() => {
+    if (!groupRef.current) return;
+    groupRef.current.visible = (poseState.activePose === 4);
+    (window as any).__debugBox2Group = groupRef.current;
+  });
+  // Рядом с позой 4: Anny [2.821,-0.808,1.656] Vell [0.425,0.053,3.193]
+  return (
+    <group ref={groupRef} visible={false} position={[0.787, 1.052, 2.279]} scale={[1.00, 6.90, 1.00]}>
+      <mesh castShadow receiveShadow>
+        <boxGeometry args={[0.45, 0.45, 0.45]} />
+        <meshStandardMaterial color="#7B4A2D" roughness={0.85} metalness={0.05} />
+      </mesh>
+    </group>
+  );
+};
+
 // ── Error boundary ────────────────────────────────────────────────────────────
 class SceneErrorBoundary extends React.Component<{ children: React.ReactNode }, { hasError: boolean }> {
   constructor(p: any) { super(p); this.state = { hasError: false }; }
@@ -850,10 +869,12 @@ export const Room2Scene = () => {
 
         {/* Pose 1 box — appears during first hug pose */}
         <Pose1Box />
+        {/* Pose 4 box — appears during fourth hug pose */}
+        <Pose4Box />
       </Physics>
 
       <Room2Interactions />
-      {/* <DebugCharPoser /> */} {/* DEBUG_CHAR_POSER (раскомментировать чтобы включить) */}
+      <DebugCharPoser /> {/* DEBUG_CHAR_POSER */}
       <OrbitControls makeDefault target={[0, 1, 0]} maxPolarAngle={Math.PI / 2 + 0.1} minDistance={2} maxDistance={15} />
     </group>
   );
