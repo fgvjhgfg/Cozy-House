@@ -6,6 +6,7 @@ import * as THREE from 'three';
 import { useFrame } from '@react-three/fiber';
 import { Physics, RigidBody, RapierRigidBody, CapsuleCollider, CuboidCollider } from '@react-three/rapier';
 import { SkeletonUtils } from 'three/examples/jsm/Addons.js';
+import { DebugCharPoser } from '../../_DEBUG_CharPoser'; // DEBUG_CHAR_POSER
 
 // ── URLs ──────────────────────────────────────────────────────────────────────
 // 3-stage compression: Meshopt geometry + 2048×2048 resize + WebP/KTX2 textures = −86% vs original
@@ -64,24 +65,8 @@ const DebugOverlay = () => {
   );
 };
 
-// HTML debug overlay — appended to body, updated each frame
-if (typeof document !== 'undefined' && !(window as any).__r2debugEl) {
-  const el = document.createElement('div');
-  el.id = '__r2debug';
-  el.style.cssText = [
-    'position:fixed','top:8px','left:50%','transform:translateX(-50%)',
-    'background:rgba(0,0,0,0.72)','color:#0f0','font:bold 14px monospace',
-    'padding:4px 14px','border-radius:6px','z-index:9999',
-    'pointer-events:none','letter-spacing:1px',
-  ].join(';');
-  document.body.appendChild(el);
-  (window as any).__r2debugEl = el;
-  // update every 100ms
-  setInterval(() => {
-    const ap = poseState.activePose;
-    el.textContent = `POSE: ${ap === null ? 'idle' : ap} | LEAD: ${leadState.active}`;
-  }, 100);
-}
+
+
 
 // ── Bone name normaliser ──────────────────────────────────────────────────────
 function normBone(name: string): string {
@@ -222,9 +207,12 @@ const usePlayerControls = () => {
 };
 
 // ── CharacterBody ─────────────────────────────────────────────────────────────
+type PoseSpawn = { pos: [number,number,number]; rotY: number } | null;
+
 const CharacterBody = ({
   modelUrl, idleAnimUrl, walkAnimUrl, isPlayer, spawnPos, targetHeight,
   colliderArgs, colliderOffset, charKey, poseUrls, modelRotationX, visualOffsetY = 0,
+  poseSpawns,
 }: {
   modelUrl: string;
   idleAnimUrl?: string;
@@ -238,6 +226,8 @@ const CharacterBody = ({
   poseUrls: [string,string,string,string];
   modelRotationX?: number;
   visualOffsetY?: number;
+  /** Per-pose teleport targets: index = pose number - 1. null = use current position. */
+  poseSpawns?: PoseSpawn[];
 }) => {
   const DUMMY = '/animations/AnyIdle.glb';
   const model   = useGLTF(modelUrl);
@@ -273,6 +263,9 @@ const CharacterBody = ({
       npcRbRef.current    = rb.current;
       npcGroupRef.current = group.current;
     }
+    // DEBUG_CHAR_POSER: expose rb + frozenPos + group for manual calibration
+    if (isPlayer) { (window as any).__debugPlayerRb = rb.current; (window as any).__debugPlayerFrozenPos = frozenPos; (window as any).__debugPlayerGroup = group.current; }
+    else          { (window as any).__debugNpcRb    = rb.current; (window as any).__debugNpcFrozenPos    = frozenPos; (window as any).__debugNpcGroup    = group.current; }
   });
 
   // ── Clone + scale + seat on floor ────────────────────────────────────────────
@@ -465,8 +458,17 @@ const CharacterBody = ({
     // ── POSE MODE ──────────────────────────────────────────────────────────────
     if (ap !== null) {
       if (lastPose.current !== ap) {
-        lastPose.current  = ap;
-        frozenPos.current = { x: t.x, y: t.y, z: t.z };
+        lastPose.current = ap;
+        // Switch to kinematic so physics engine stops fighting our frozen position
+        rb.current.setBodyType(2, true); // 2 = KinematicPositionBased
+        rb.current.setLinvel({ x: 0, y: 0, z: 0 }, false);
+        const spawn = poseSpawns?.[ap - 1] ?? null;
+        if (spawn) {
+          frozenPos.current = { x: spawn.pos[0], y: spawn.pos[1], z: spawn.pos[2] };
+          if (group.current) group.current.rotation.y = spawn.rotY;
+        } else {
+          frozenPos.current = { x: t.x, y: t.y, z: t.z };
+        }
         idleAct.current?.stop();
         walkAct.current?.stop();
         poseActs.current.forEach((a, i) => { if (a && i !== ap - 1) a.stop(); });
@@ -475,9 +477,7 @@ const CharacterBody = ({
         else console.warn(`[${charKey}] pose${ap} – no action`);
       }
       if (frozenPos.current) {
-        rb.current.setTranslation(frozenPos.current, true);
-        rb.current.setLinvel({ x: 0, y: 0, z: 0 }, true);
-        rb.current.setAngvel({ x: 0, y: 0, z: 0 }, true);
+        rb.current.setNextKinematicTranslation(frozenPos.current);
       }
       return;
     }
@@ -487,7 +487,9 @@ const CharacterBody = ({
       poseActs.current.forEach(a => a?.fadeOut(0.2));
       lastPose.current  = null;
       frozenPos.current = null;
-      isWalking.current = false; // reset walk state so transition works cleanly
+      isWalking.current = false;
+      // Restore dynamic physics so character can move again
+      rb.current.setBodyType(0, true); // 0 = Dynamic
       if (idleAct.current) { idleAct.current.reset().fadeIn(0.2).play(); }
     }
 
@@ -714,6 +716,24 @@ const RoomModel = () => {
     </RigidBody>
   );
 };
+// ── Pose 1 Box (visible only during pose 1) ────────────────────────────────────
+const Pose1Box = () => {
+  const groupRef = useRef<THREE.Group>(null);
+  useFrame(() => {
+    if (!groupRef.current) return;
+    groupRef.current.visible = (poseState.activePose === 1);
+    (window as any).__debugBoxGroup = groupRef.current;
+  });
+  // Midpoint between Anny [1.948, -0.968, 3.471] and Vell [-0.507, 0.149, 0.670]
+  return (
+    <group ref={groupRef} visible={false} position={[0.024, -0.088, 2.044]} scale={2.2}>
+      <mesh castShadow receiveShadow>
+        <boxGeometry args={[0.45, 0.45, 0.45]} />
+        <meshStandardMaterial color="#7B4A2D" roughness={0.85} metalness={0.05} />
+      </mesh>
+    </group>
+  );
+};
 
 // ── Error boundary ────────────────────────────────────────────────────────────
 class SceneErrorBoundary extends React.Component<{ children: React.ReactNode }, { hasError: boolean }> {
@@ -784,11 +804,15 @@ export const Room2Scene = () => {
               charKey="anny"
               poseUrls={ANNY_POSE_URLS}
               isPlayer={character === 'Any'}
-              spawnPos={[-0.5, 3, 0]}
+              spawnPos={[2.073, -0.857, 3.410]}
               targetHeight={0.8}
               colliderArgs={[0.12, 0.35]}
               colliderOffset={[0, 0.47, 0]}
               visualOffsetY={0.72}
+              poseSpawns={[
+                { pos: [1.948, -0.968, 3.471], rotY: THREE.MathUtils.degToRad(-140.260) }, // Pose 1: объятия
+                null, null, null,
+              ]}
             />
             {/* Vell: без idle (стоит без анимации), walk только когда его ведут */}
             <CharacterBody
@@ -803,12 +827,20 @@ export const Room2Scene = () => {
               colliderOffset={[0, 0.36, 0]}
               visualOffsetY={-0.5}
               modelRotationX={-Math.PI / 2}
+              poseSpawns={[
+                { pos: [-0.507, 0.149, 0.670], rotY: THREE.MathUtils.degToRad(41.253) }, // Pose 1: объятия
+                null, null, null,
+              ]}
             />
           </Suspense>
         </SceneErrorBoundary>
+
+        {/* Pose 1 box — appears during first hug pose */}
+        <Pose1Box />
       </Physics>
 
       <Room2Interactions />
+      <DebugCharPoser /> {/* DEBUG_CHAR_POSER */}
       <OrbitControls makeDefault target={[0, 1, 0]} maxPolarAngle={Math.PI / 2 + 0.1} minDistance={2} maxDistance={15} />
     </group>
   );
