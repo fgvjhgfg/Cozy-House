@@ -43,30 +43,33 @@ const WALL_RADIUS = 4.5;
 const DOOR_RADIUS = 5.0;
 const ROOM_SCALE_TARGET = 12;
 
-// ── Pose activation zones (small areas around each interaction spot) ──────────
-// Centers = Annie + Vell pose spawn positions. Each zone has its own radius.
-const POSE_ZONES: { poseIdx: number; radius: number; centers: { x: number; z: number }[] }[] = [
-  { poseIdx: 1, radius: 1.5, centers: [{ x: 1.948, z: 3.471 }, { x: -0.507, z: 0.670 }] },
-  { poseIdx: 2, radius: 2.0, centers: [{ x: -1.506, z: -4.735 }, { x: -2.074, z: -3.654 }] },
-  { poseIdx: 3, radius: 2.0, centers: [{ x: 2.899, z: -1.049 }, { x: 5.697, z: 0.018 }] },
-  // Pose 4: expanded radius — overlaps pose 1 area, nearest-center detection resolves priority
-  { poseIdx: 4, radius: 2.5, centers: [{ x: 2.821, z: 1.656 }, { x: 0.425, z: 3.193 }] },
-];
+// ── Pose zone detection — character-specific ──────────────────────────────────
+// Each character has their own pose spawn positions — avoids inter-pose overlap.
+// detectPoseZoneForChar() uses nearest-center within that character's own poses only.
+const CHAR_POSE_CENTERS: Record<'annie' | 'vell', { x: number; z: number }[]> = {
+  annie: [
+    { x: 1.948, z: 3.471 },   // pose 1
+    { x: -1.506, z: -4.735 }, // pose 2
+    { x: 2.899, z: -1.049 },  // pose 3
+    { x: 2.821, z: 1.656 },   // pose 4
+  ],
+  vell: [
+    { x: -0.507, z: 0.670 },  // pose 1
+    { x: -2.074, z: -3.654 }, // pose 2
+    { x: 5.697, z: 0.018 },   // pose 3
+    { x: 0.425, z: 3.193 },   // pose 4
+  ],
+};
+const POSE_ZONE_RADIUS = 2.0;
 
-// Returns the poseIdx of the NEAREST zone center that is within its zone's radius.
-// "Nearest" wins, so pose 1 and pose 4 won't conflict even when their radii overlap.
-function detectPoseZone(px: number, pz: number): number | null {
+function detectPoseZoneForChar(px: number, pz: number, charKey: 'annie' | 'vell'): number | null {
+  const centers = CHAR_POSE_CENTERS[charKey];
   let bestPose: number | null = null;
   let bestDist = Infinity;
-  for (const zone of POSE_ZONES) {
-    for (const c of zone.centers) {
-      const d = Math.hypot(px - c.x, pz - c.z);
-      if (d < zone.radius && d < bestDist) {
-        bestDist = d;
-        bestPose = zone.poseIdx;
-      }
-    }
-  }
+  centers.forEach((c, i) => {
+    const d = Math.hypot(px - c.x, pz - c.z);
+    if (d < POSE_ZONE_RADIUS && d < bestDist) { bestDist = d; bestPose = i + 1; }
+  });
   return bestPose;
 }
 
@@ -645,18 +648,22 @@ const CharacterBody = ({
 
 // ── Interactions ──────────────────────────────────────────────────────────────
 const Room2Interactions = () => {
-  const { setPromptText, addHug } = useStore();
+  const { setPromptText, addHug, character } = useStore();
   useTransition();
   // Cache last prompt to avoid calling setPromptText every frame (60fps → Zustand mutations → remount loop)
   const lastPrompt = useRef('');
 
-  // Helper: activate a pose only if BOTH characters are in its zone
+  // Determine which charKey belongs to player vs NPC
+  const playerCharKey = (character === 'Annie' ? 'annie' : 'vell') as 'annie' | 'vell';
+  const npcCharKey    = (character === 'Annie' ? 'vell' : 'annie') as 'annie' | 'vell';
+
+  // Helper: activate a pose only if BOTH characters are in its zone (character-specific check)
   function tryActivatePose(poseIdx: number) {
     const player = (window as any).playerPos as { x: number; z: number } | undefined;
     const npc    = (window as any).npcPos    as { x: number; z: number } | undefined;
     if (!player || !npc) return false;
-    const playerInZone = detectPoseZone(player.x, player.z) === poseIdx;
-    const npcInZone    = detectPoseZone(npc.x,    npc.z)    === poseIdx;
+    const playerInZone = detectPoseZoneForChar(player.x, player.z, playerCharKey) === poseIdx;
+    const npcInZone    = detectPoseZoneForChar(npc.x,    npc.z,    npcCharKey)    === poseIdx;
     if (!playerInZone || !npcInZone) {
       console.log(`[E] pose${poseIdx}: player=${playerInZone} npc=${npcInZone} — need both in zone`);
       return false;
@@ -664,7 +671,6 @@ const Room2Interactions = () => {
     leadState.active     = false;
     poseState.activePose = poseIdx;
     poseState.poseIdx    = poseIdx;
-    // Register unique hug discovery
     addHug('Room2Scene', `pose${poseIdx}`);
     console.log('[E] activate pose', poseIdx, '(both in zone)');
     return true;
@@ -679,11 +685,15 @@ const Room2Interactions = () => {
     (window as any).activeZone   = nearDoor ? 'door' : '';
     (window as any).r2ActiveZone = nearDoor ? 'door' : '';
 
-    // Detect which pose zone the PLAYER is currently in (or null)
-    const nearPose = poseState.activePose === null ? detectPoseZone(p.x, p.z) : null;
-    // Also check if NPC is in the same zone (needed for dual-character check hint)
+    // Detect which pose zone the PLAYER is currently in (character-specific)
+    const nearPose = poseState.activePose === null
+      ? detectPoseZoneForChar(p.x, p.z, playerCharKey)
+      : null;
+    // Also check if NPC is in the same zone (for hint display)
     const npc = (window as any).npcPos as { x: number; z: number } | undefined;
-    const npcNearPose = nearPose !== null && npc ? detectPoseZone(npc.x, npc.z) === nearPose : false;
+    const npcNearPose = nearPose !== null && npc
+      ? detectPoseZoneForChar(npc.x, npc.z, npcCharKey) === nearPose
+      : false;
     (window as any).r2NearPoseZone = nearPose;
 
     // Only call setPromptText when text changes (prevents 60fps Zustand mutations)
@@ -704,7 +714,7 @@ const Room2Interactions = () => {
         poseState.activePose = null;
         poseState.poseIdx    = 0;
       } else {
-        const zone = detectPoseZone(p.x, p.z);
+        const zone = detectPoseZoneForChar(p.x, p.z, playerCharKey);
         if (zone !== null) tryActivatePose(zone);
       }
     }
@@ -736,7 +746,7 @@ const Room2Interactions = () => {
       } else {
         // E while free → activate pose for current zone only if BOTH characters are in it
         const pp = (window as any).playerPos;
-        const zone = pp ? detectPoseZone(pp.x, pp.z) : null;
+        const zone = pp ? detectPoseZoneForChar(pp.x, pp.z, playerCharKey) : null;
         if (zone !== null) tryActivatePose(zone);
         else console.log('[E] not in any pose zone — ignored');
       }
