@@ -1,6 +1,12 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 
+export const ROOM_HUG_MAX: Record<string, number> = {
+  'Room1Scene': 3,
+  'Room2Scene': 4,
+  'Room3Scene': 4,
+};
+
 interface GameState {
   character: string | null;
   setCharacter: (char: string) => void;
@@ -45,7 +51,8 @@ export const useStore = create<GameState>()(
           let newDoorState = { ...state.doorOpened };
           let newUnlockedRooms = [...state.unlockedRooms];
           
-          if (newHugs.length >= 4) {
+          const max = ROOM_HUG_MAX[room] ?? 4;
+          if (newHugs.length >= max) {
             newDoorState[room] = true;
             if (room === 'Room1Scene' && !newUnlockedRooms.includes('Room2Scene')) {
               newUnlockedRooms.push('Room2Scene');

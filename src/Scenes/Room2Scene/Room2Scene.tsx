@@ -60,7 +60,7 @@ const CHAR_POSE_CENTERS: Record<'annie' | 'vell', { x: number; z: number }[]> = 
     { x: 0.425, z: 3.193 },   // pose 4
   ],
 };
-const POSE_ZONE_RADIUS = 2.0;
+const POSE_ZONE_RADIUS = 6.0; // x3 от исходного 2.0
 
 function detectPoseZoneForChar(px: number, pz: number, charKey: 'annie' | 'vell'): number | null {
   const centers = CHAR_POSE_CENTERS[charKey];
@@ -730,13 +730,15 @@ const Room2Interactions = () => {
       // ── Guard: ignore key-repeat events (held key) ────────────────────────
       if (e.repeat) return;
 
-      if (e.code === 'KeyF' || e.key === 'f' || e.key === 'F') {
+      if (e.code === 'KeyF') {
         leadState.active = !leadState.active;
         if (!leadState.active && npcRbRef.current) npcRbRef.current.setLinvel({ x: 0, y: 0, z: 0 }, true);
         console.log('[F] leadState.active =', leadState.active);
         return;
       }
-      if (e.key !== 'e' && e.key !== 'E' && e.code !== 'Space') return;
+      // E (англ.) = У (рус.) — одна физическая клавиша KeyE. KeyY — альтернатива.
+      // e.code — всегда физическая позиция клавиши, не зависит от разкладки.
+      if (e.code !== 'KeyE' && e.code !== 'KeyY' && e.code !== 'Space') return;
 
       if (poseState.activePose !== null) {
         // E while in pose → EXIT pose

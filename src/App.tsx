@@ -2,6 +2,7 @@ import React, { Suspense, lazy, useState } from 'react';
 import { Canvas } from '@react-three/fiber';
 import { TransitionProvider } from './Shared/Transition/TransitionManager';
 import { useStore } from './Shared/Store/useStore';
+import { ROOM_HUG_MAX } from './Shared/Store/useStore';
 import { Room1Scene } from './Scenes/Room1Scene/Room1Scene';
 import { Room2Scene } from './Scenes/Room2Scene/Room2Scene';
 import { LoadingScreen } from './Shared/Cache/LoadingScreen';
@@ -23,12 +24,15 @@ const HUD = () => {
   const { foundHugs, currentRoom, doorOpened, promptText } = useStore();
   const hugs = foundHugs[currentRoom] || [];
   const isOpen = doorOpened[currentRoom];
+  const maxHugs = ROOM_HUG_MAX[currentRoom] ?? 4;
 
   return (
     <>
       <div className="hud">
-        <h2>Объятия: {hugs.length} / 4</h2>
-        {isOpen ? <p style={{color:'#88ff88'}}>🚪 Дверь открыта!</p> : <p>Найди 4 разных позы объятий.</p>}
+        <h2>Объятия: {hugs.length} / {maxHugs}</h2>
+        {isOpen
+          ? <p style={{color:'#88ff88'}}>🚪 Дверь открыта!</p>
+          : <p>Найди {maxHugs} разных поз объятий.</p>}
       </div>
       {promptText && (
         <div className="interaction-prompt">

@@ -1164,7 +1164,6 @@ function selectChar(isMale) {
 
 function canLeadByHand() {
   if (!player || !npc || activeHug) return false;
-  if (player.isMale) return false; // Ведёт только Any
   return player.group.position.distanceTo(npc.group.position) < 2.8;
 }
 
@@ -1501,12 +1500,13 @@ export function updateRoom1(dt) {
       touchLeadPressed = false;
     }
 
-    if (keys["KeyE"] || touchHugPressed) {
+    if (keys["KeyE"] || keys["KeyY"] || touchHugPressed) {
       const pose = getNextPose(player, npc);
       if (pose) {
         startHug(pose);
       }
       keys["KeyE"] = false;
+      keys["KeyY"] = false;
       touchHugPressed = false;
     }
   }
@@ -1571,7 +1571,9 @@ export function updateRoom1(dt) {
   if (!activeHug) {
     const pose = getPreviewPose(player, npc);
     if (handHoldActive) {
-      if (onPromptCallback) onPromptCallback("🤝  Any ведёт Vell за руку · [F] отпустить");
+      const leader = player.isMale ? 'Vell' : 'Annie';
+      const follower = player.isMale ? 'Annie' : 'Vell';
+      if (onPromptCallback) onPromptCallback(`🤝  ${leader} ведёт ${follower} за руку · [F] отпустить`);
     } else if (pose) {
       const leadHint = canLeadByHand() ? "   ·   🤝 [F] Вести" : "";
       if (onPromptCallback) onPromptCallback(POSES[pose].label + leadHint);
